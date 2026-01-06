@@ -1,0 +1,1 @@
+/opt/mka/api/dashboards/upgrade_plan.php

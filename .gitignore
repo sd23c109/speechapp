@@ -1,0 +1,10 @@
+config/
+logs/
+vendor/
+lib/
+public/dashboards/images/
+public/dashboards/img/
+public/dashboards/plugins/
+public/dashboards/js/
+storage/
+public/assets/portal/exercises/images/

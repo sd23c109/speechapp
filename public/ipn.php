@@ -1,0 +1,1 @@
+/opt/mka/api/paypal/ipn.php

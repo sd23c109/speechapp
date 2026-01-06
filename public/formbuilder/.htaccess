@@ -1,0 +1,14 @@
+RewriteEngine On
+RewriteBase /formbuilder/
+
+# Skip existing files and directories
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Route /formbuilder/companyslug/formslug to index.php
+RewriteRule ^([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)$ index.php?company=$1&form=$2 [QSA,L]
+
+# Catch-all for /formbuilder/slug or anything else
+RewriteRule ^(.+)$ index.php?slug=$1 [QSA,L]
+

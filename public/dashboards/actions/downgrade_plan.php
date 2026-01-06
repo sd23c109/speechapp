@@ -1,0 +1,1 @@
+/opt/mka/api/dashboards/downgrade_plan.php

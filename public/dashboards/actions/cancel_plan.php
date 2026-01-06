@@ -1,0 +1,1 @@
+/opt/mka/api/dashboards/cancel_plan.php
