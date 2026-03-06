@@ -43,56 +43,82 @@ $user_uuid = $_SESSION['user_data']['user_uuid'] ?? null;
 
 if ($user_uuid) {
 
-    /*
-     * Validate API key
-     */
-    $stmt = $GLOBALS['pdo']->prepare("
-        SELECT api_key, status, expires_at
-        FROM mka_api_keys
-        WHERE user_uuid = ?
-        LIMIT 1
-    ");
-    $stmt->execute([$user_uuid]);
-    $keyRow = $stmt->fetch(PDO::FETCH_ASSOC);
+    // Get user type from session (set by LoginHandler)
+    $userType = $_SESSION['user_data']['user_type'] ?? 'end_user';
 
-    if (
-        !$keyRow || $keyRow['status'] !== 'active' ||
-        ($keyRow['expires_at'] && strtotime($keyRow['expires_at']) < time())
-    ) {
-        error_log("Trial expired or invalid API key for user $user_uuid");
-        setcookie('mka_user_uuid', $user_uuid, time() + 3600, '/', '.speechapp.virtuopsdev.com');
-        header('Location: https://speechapp.virtuopsdev.com/trial-expired');
-        exit;
+    /*
+     * Validate API key (skip for super_user)
+     */
+    if ($userType !== 'super_user') {
+        $stmt = $GLOBALS['pdo']->prepare("
+            SELECT api_key, status, expires_at
+            FROM mka_api_keys
+            WHERE user_uuid = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$user_uuid]);
+        $keyRow = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (
+            !$keyRow || $keyRow['status'] !== 'active' ||
+            ($keyRow['expires_at'] && strtotime($keyRow['expires_at']) < time())
+        ) {
+            error_log("Trial expired or invalid API key for user $user_uuid");
+            setcookie('mka_user_uuid', $user_uuid, time() + 3600, '/', '.speechapp.virtuopsdev.com');
+            header('Location: https://speechapp.virtuopsdev.com/trial-expired');
+            exit;
+        }
+
+        $_SESSION['user_data']['api_key'] = $keyRow['api_key'];
     }
 
-    $_SESSION['user_data']['api_key'] = $keyRow['api_key'];
-
     /*
-     * Load subscription
+     * Load subscription (skip for super_user)
      */
-    $stmt = $GLOBALS['pdo']->prepare("
-        SELECT 
-            us.tier_uuid,
-            us.paypal_subscription_id,
-            us.expires_at, 
-            us.status AS subscription_status,
-            pt.name AS plan_name, 
-            pt.features_json
-        FROM user_subscriptions us
-        INNER JOIN product_tiers pt ON us.tier_uuid = pt.tier_uuid 
-        WHERE us.user_uuid = ?
-          AND us.status IN ('trial','active')
-        ORDER BY us.started_at DESC
-        LIMIT 1
-    ");
-    $stmt->execute([$user_uuid]);
-    $userSub = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($userType !== 'super_user') {
+        $stmt = $GLOBALS['pdo']->prepare("
+            SELECT 
+                us.tier_uuid,
+                us.paypal_subscription_id,
+                us.expires_at, 
+                us.status AS subscription_status,
+                pt.name AS plan_name, 
+                pt.features_json
+            FROM user_subscriptions us
+            INNER JOIN product_tiers pt ON us.tier_uuid = pt.tier_uuid 
+            WHERE us.user_uuid = ?
+              AND us.status IN ('trial','active')
+            ORDER BY us.started_at DESC
+            LIMIT 1
+        ");
+        $stmt->execute([$user_uuid]);
+        $userSub = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($userSub) {
+            $_SESSION['user_data']['plan_name']           = $userSub['plan_name'];
+            $_SESSION['user_data']['subscription_id']     = $userSub['paypal_subscription_id'];
+            $_SESSION['user_data']['expires_at']          = $userSub['expires_at'];
+            $_SESSION['user_data']['plan_features']       = !empty($userSub['features_json'])
+                ? json_decode($userSub['features_json'], true)
+                : [];
+            $_SESSION['user_data']['subscription_status'] = $userSub['subscription_status'];
+        } else {
+            // Only enforce subscription requirement for non-trial end_users
+            if (($_SESSION['user_data']['user_info']['Status'] ?? 'n') === 'n') {
+                error_log("No active subscription or trial for user $user_uuid");
+                session_unset();
+                session_destroy();
+                header("Location: /dashboards/account_inactive.php");
+                exit;
+            }
+        }
+    }
 
     /*
      * Load basic user info
      */
     $stmt = $GLOBALS['pdo']->prepare("
-        SELECT UserUUID, Email, Name, Domain, company_name, company_slug, TrialExpires, CreatedAt, IsTrial, IsPaid
+        SELECT UserUUID, Email, Name, Domain, company_name, company_slug, TrialExpires, CreatedAt, Status, IsPaid, user_type
         FROM mka_users
         WHERE UserUUID = ?
         LIMIT 1
@@ -102,27 +128,11 @@ if ($user_uuid) {
 
     if (!empty($userData)) {
         $_SESSION['user_data']['user_info'] = $userData;
+        // Make sure user_type is in session
+        $_SESSION['user_data']['user_type'] = $userData['user_type'];
     } else {
         header("Location: /dashboards/logout.php");
         exit;
-    }
-
-    if ($userSub) {
-        $_SESSION['user_data']['plan_name']           = $userSub['plan_name'];
-        $_SESSION['user_data']['subscription_id']     = $userSub['paypal_subscription_id'];
-        $_SESSION['user_data']['expires_at']          = $userSub['expires_at'];
-        $_SESSION['user_data']['plan_features']       = !empty($userSub['features_json'])
-            ? json_decode($userSub['features_json'], true)
-            : [];
-        $_SESSION['user_data']['subscription_status'] = $userSub['subscription_status'];
-    } else {
-        if (($_SESSION['user_data']['user_info']['IsTrial'] ?? 'n') === 'n') {
-            error_log("No active subscription or trial for user $user_uuid");
-            session_unset();
-            session_destroy();
-            header("Location: /dashboards/account_inactive.php");
-            exit;
-        }
     }
 
     /*
@@ -135,24 +145,24 @@ if ($user_uuid) {
 
     $hasActiveMembership = function(string $userUuid, string $accountUuid): bool {
         $stmt = $GLOBALS['pdo']->prepare("
-        SELECT 1
-        FROM mka_user_accounts
-        WHERE user_uuid = :u
-          AND account_uuid = :a
-          AND status = 'active'
-        LIMIT 1
-    ");
+            SELECT 1
+            FROM mka_user_accounts
+            WHERE user_uuid = :u
+              AND account_uuid = :a
+              AND status = 'active'
+            LIMIT 1
+        ");
         $stmt->execute([':u' => $userUuid, ':a' => $accountUuid]);
         return (bool)$stmt->fetchColumn();
     };
 
-// 1) If session has a current account, make sure membership is valid; otherwise discard it.
+    // 1) If session has a current account, make sure membership is valid; otherwise discard it.
     if ($currentAccount && !$hasActiveMembership($user_uuid, $currentAccount)) {
         $currentAccount = null;
         unset($_SESSION['current_account_uuid']);
     }
 
-// 2) If login stored a preferred account in the session (from provisioning), and user is a member, use that.
+    // 2) If login stored a preferred account in the session (from provisioning), and user is a member, use that.
     if (!$currentAccount) {
         $loginAccount = $_SESSION['user_data']['account_uuid'] ?? null;
         if ($loginAccount && $hasActiveMembership($user_uuid, $loginAccount)) {
@@ -160,16 +170,16 @@ if ($user_uuid) {
         }
     }
 
-// 3) If the host maps to an account, only use it if the user is a member of that account.
+    // 3) If the host maps to an account, only use it if the user is a member of that account.
     if (!$currentAccount) {
         $host = $_SERVER['HTTP_HOST'] ?? '';
         if ($host) {
             $stmt = $GLOBALS['pdo']->prepare("
-            SELECT account_uuid
-            FROM mka_account_domains
-            WHERE domain = :d
-            LIMIT 1
-        ");
+                SELECT account_uuid
+                FROM mka_account_domains
+                WHERE domain = :d
+                LIMIT 1
+            ");
             $stmt->execute([':d' => $host]);
             $mapped = $stmt->fetchColumn() ?: null;
 
@@ -179,15 +189,15 @@ if ($user_uuid) {
         }
     }
 
-// 4) Fallback: first active membership by role priority.
+    // 4) Fallback: first active membership by role priority (SUPER_USER added!)
     if (!$currentAccount) {
         $stmt = $GLOBALS['pdo']->prepare("
-        SELECT account_uuid
-        FROM mka_user_accounts
-        WHERE user_uuid = :u AND status='active'
-        ORDER BY FIELD(role,'OWNER','ADMIN','STAFF','CONTRACTOR','PATIENT') ASC
-        LIMIT 1
-    ");
+            SELECT account_uuid
+            FROM mka_user_accounts
+            WHERE user_uuid = :u AND status='active'
+            ORDER BY FIELD(role,'SUPER_USER','OWNER','ADMIN','STAFF','CONTRACTOR','PATIENT') ASC
+            LIMIT 1
+        ");
         $stmt->execute([':u' => $user_uuid]);
         $currentAccount = $stmt->fetchColumn() ?: null;
     }
@@ -200,15 +210,15 @@ if ($user_uuid) {
 
     $_SESSION['current_account_uuid'] = $currentAccount;
 
-// Resolve role (now guaranteed to exist if we passed checks)
+    // Resolve role (now guaranteed to exist if we passed checks)
     $stmt = $GLOBALS['pdo']->prepare("
-    SELECT role
-    FROM mka_user_accounts
-    WHERE user_uuid = :u
-      AND account_uuid = :a
-      AND status='active'
-    LIMIT 1
-");
+        SELECT role
+        FROM mka_user_accounts
+        WHERE user_uuid = :u
+          AND account_uuid = :a
+          AND status='active'
+        LIMIT 1
+    ");
     $stmt->execute([':u' => $user_uuid, ':a' => $currentAccount]);
     $role = $stmt->fetchColumn();
 
@@ -220,14 +230,15 @@ if ($user_uuid) {
 
     $GLOBALS['_role_cache'] = $role;
 
-
     /*
-     * Enforce plan limits (same as before)
+     * Enforce plan limits (skip for super_user and enterprise_admin)
      */
-    try {
-        CheckSubscriptionLimits::enforceFormLimit($user_uuid);
-    } catch (Exception $e) {
-        error_log("Subscription limit enforcement failed for user {$user_uuid}: " . $e->getMessage());
+    if (!in_array($userType, ['super_user', 'enterprise_admin'])) {
+        try {
+            CheckSubscriptionLimits::enforceFormLimit($user_uuid);
+        } catch (Exception $e) {
+            error_log("Subscription limit enforcement failed for user {$user_uuid}: " . $e->getMessage());
+        }
     }
 }
 
@@ -239,6 +250,7 @@ if ($user_uuid) {
 function current_user_uuid()    { return $_SESSION['user_data']['user_uuid'] ?? null; }
 function current_account_uuid() { return $_SESSION['current_account_uuid'] ?? null; }
 function current_role()         { return $GLOBALS['_role_cache'] ?? null; }
+function current_user_type()    { return $_SESSION['user_data']['user_type'] ?? 'end_user'; }
 
 function require_role(array $allowed)
 {

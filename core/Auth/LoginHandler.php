@@ -23,17 +23,17 @@ class LoginHandler
         ");
         $stmt->execute(['email' => $email]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
-        
+
         if ($user && $user['email_confirmed'] !== 'y') {
-            return ['status' => 'fail', 'message' => 'Please confirm your email before logging in.'];
+            return ['success' => false, 'message' => 'Please confirm your email before logging in.'];
         }
 
         if (!$user || !password_verify($password, $user['PasswordHash'])) {
             return ['success' => false, 'message' => 'Invalid login credentials.'];
         }
 
-        // Check for expired trial
-        if ($user['IsTrial'] === 'y' && !empty($user['TrialExpires'])) {
+        // Check for expired trial (but NOT for super_user)
+        if ($user['user_type'] !== 'super_user' && $user['Status'] === 'trial' && !empty($user['TrialExpires'])) {
             $now = new \DateTime();
             $trialExpires = new \DateTime($user['TrialExpires']);
 
@@ -42,76 +42,105 @@ class LoginHandler
             }
         }
 
-        // Check for unpaid account
-        if ($user['IsPaid'] === 'n' && $user['IsTrial'] === 'n') {
+        // Check for unpaid account (but NOT for super_user)
+        if ($user['user_type'] !== 'super_user' && $user['IsPaid'] === 'n' && $user['Status'] === 'active') {
             return ['success' => false, 'message' => 'Payment required. Please subscribe to continue.'];
         }
 
-        // ... after password_verify + email_confirmed + trial checks, before setting session:
-
-// Ensure the user has an active account membership (trials included)
-        // Ensure the user has an account membership (including trial users)
+        // Ensure the user has an active account membership
         $GLOBALS['pdo']->beginTransaction();
 
         try {
             // Does this user already belong to an active account?
             $stmt = $GLOBALS['pdo']->prepare("
-        SELECT mua.account_uuid
-        FROM mka_user_accounts AS mua
-        WHERE mua.user_uuid = :u
-          AND mua.status = 'active'
-        ORDER BY FIELD(mua.role,'OWNER','ADMIN','STAFF','CONTRACTOR','PATIENT') ASC
-        LIMIT 1
-    ");
+                SELECT mua.account_uuid
+                FROM mka_user_accounts AS mua
+                WHERE mua.user_uuid = :u
+                  AND mua.status = 'active'
+                ORDER BY FIELD(mua.role,'SUPER_USER','OWNER','ADMIN','STAFF','CONTRACTOR','PATIENT') ASC
+                LIMIT 1
+            ");
             $stmt->execute([':u' => $user['UserUUID']]);
             $accountUuid = $stmt->fetchColumn();
 
             if (!$accountUuid) {
-                // Need to create a new account and attach user as OWNER
-                $accountUuid = self::uuidV4();
+                // Need to create a new account and attach user with appropriate role
 
-                // Use company_name + company_slug from mka_users (these are REQUIRED columns)
+                // Use company_name + company_slug from mka_users
                 $accountName = $user['company_name'];
                 $slug = $user['company_slug'];
 
-                // Create account
+                // Check if account with this slug already exists
                 $stmt = $GLOBALS['pdo']->prepare("
+        SELECT account_uuid FROM mka_accounts WHERE slug = ?
+    ");
+                $stmt->execute([$slug]);
+                $existingAccountUuid = $stmt->fetchColumn();
+
+                if ($existingAccountUuid) {
+                    // Account exists, just add user to it
+                    $accountUuid = $existingAccountUuid;
+                } else {
+                    // Create new account
+                    $accountUuid = self::uuidV4();
+
+                    // Determine role based on user_type
+                    $role = self::getRoleForUserType($user['user_type']);
+
+                    // Create account
+                    $stmt = $GLOBALS['pdo']->prepare("
             INSERT INTO mka_accounts
                 (account_uuid, name, slug, owner_user_uuid, created_at)
             VALUES
                 (:uuid, :name, :slug, :owner, NOW())
         ");
-                $stmt->execute([
-                    ':uuid'  => $accountUuid,
-                    ':name'  => $accountName,
-                    ':slug'  => $slug,
-                    ':owner' => $user['UserUUID']
-                ]);
+                    $stmt->execute([
+                        ':uuid'  => $accountUuid,
+                        ':name'  => $accountName,
+                        ':slug'  => $slug,
+                        ':owner' => $user['UserUUID']
+                    ]);
+                }
 
-                // Add user to that account
+                // Determine role based on user_type
+                $role = self::getRoleForUserType($user['user_type']);
+
+                // Add user to that account with appropriate role (if not already added)
                 $stmt = $GLOBALS['pdo']->prepare("
+        SELECT COUNT(*) FROM mka_user_accounts 
+        WHERE user_uuid = :u AND account_uuid = :a
+    ");
+                $stmt->execute([':u' => $user['UserUUID'], ':a' => $accountUuid]);
+
+                if ($stmt->fetchColumn() == 0) {
+                    $stmt = $GLOBALS['pdo']->prepare("
             INSERT INTO mka_user_accounts
                 (user_uuid, account_uuid, role, status, created_at)
             VALUES
-                (:u, :a, 'OWNER', 'active', NOW())
+                (:u, :a, :role, 'active', NOW())
         ");
-                $stmt->execute([':u' => $user['UserUUID'], ':a' => $accountUuid]);
+                    $stmt->execute([
+                        ':u' => $user['UserUUID'],
+                        ':a' => $accountUuid,
+                        ':role' => $role
+                    ]);
+                }
             }
 
             $GLOBALS['pdo']->commit();
 
         } catch (\Throwable $e) {
             $GLOBALS['pdo']->rollBack();
-            return ['success' => false, 'message' => 'Login provisioning error.'];
+            error_log("Login provisioning error: " . $e->getMessage());
+            return ['success' => false, 'message' => 'Login provisioning error: ' . $e->getMessage()];
         }
 
         // Store session
-
-
         $_SESSION['user_data'] = [
             'user_uuid'     => $user['UserUUID'],
             'email'         => $user['Email'],
-            'is_trial'      => $user['IsTrial'],
+            'user_type'     => $user['user_type'],  // ADDED: Store user type
+            'is_trial'      => $user['Status'],
             'trial_expires' => $user['TrialExpires'],
             'is_paid'       => $user['IsPaid'],
             'company_name'  => $user['company_name'],
@@ -119,8 +148,19 @@ class LoginHandler
             'account_uuid'  => $accountUuid,
         ];
 
-
         return ['success' => true];
+    }
+
+    /**
+     * Get role based on user type
+     */
+    private static function getRoleForUserType(string $userType): string {
+        return match($userType) {
+            'super_user' => 'SUPER_USER',
+            'enterprise_admin' => 'OWNER',
+            'end_user' => 'PATIENT',
+            default => 'PATIENT'
+        };
     }
 
     private static function uuidV4(): string {

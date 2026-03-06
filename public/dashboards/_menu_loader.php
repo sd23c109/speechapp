@@ -8,7 +8,7 @@ $planclass = 'text-bg-primary';
 $user_uuid = $_SESSION['user_data']['user_info']['UserUUID'];
 
 
-if ($_SESSION['user_data']['user_info']['IsTrial'] == 'y'){
+if ($_SESSION['user_data']['user_info']['Status'] == 'y'){
 
     $planclass = 'text-bg-warning';
     $expiresAt = $_SESSION['user_data']['user_info']['TrialExpires'];
@@ -66,9 +66,8 @@ echo "<!-- CSRF TOKEN IN JS: " . (\MKA\Security\CSRFHelper::getToken() ?? 'NOT S
 </script>
 <?php
 if (!empty($_SESSION['csrf_token'])) {
-    ?>
-    <script src="../assets/formbuilder/mka-js/idle-timeout.js"></script>
-    <?php
+   //to do
+    error_log($_SESSION['csrf_token']);
 
 }
 ?>
@@ -106,20 +105,7 @@ if (!empty($_SESSION['csrf_token'])) {
         </div>
 
         <ul class="nav metismenu" id="side-menu">
-            <li>
-                <a href="#">
-                    <i data-lucide="smile"></i>
-                    <span class="nav-label">Speech App</span>
-                    <span class="fa arrow"></span>
-                </a>
-                <ul class="nav nav-second-level collapse">
 
-
-                        <li><a href="speechapp.php">Exercises</a></li>
-                   
-
-                </ul>
-            </li>
 
 
             <?php

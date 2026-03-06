@@ -20,7 +20,7 @@ error_log(json_encode($_SESSION));
     <meta content="MKAdvantage" name="author" />
 
     <!-- Favicon -->
-    <link rel="shortcut icon" href="img/favicon.ico">
+    <link rel="shortcut icon"href="/dashboards/img/favicon.ico">
 
     <!-- Toastr css -->
     <link href="plugins/toastr/css/toastr.min.css" rel="stylesheet">
@@ -99,7 +99,7 @@ error_log(json_encode($_SESSION));
                     <div class="d-flex gap-2">
                      <!-- Upgrade Button -->
                      <?php
-                       if ($_SESSION['user_data']['user_info']['IsTrial'] == 'y') {  
+                       if ($_SESSION['user_data']['user_info']['Status'] == 'y') {
                      ?>
                            <button type="button" class="btn btn-outline-success" id="payNowTrigger" data-bs-toggle="offcanvas" data-bs-target="#SignUpPayNow">
                            Upgrade Plan

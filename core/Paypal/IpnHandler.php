@@ -56,7 +56,7 @@ class IpnHandler
             error_log("IPN: New subscription created for {$subscriptionId}");
 
            /* if ($userUUID) {
-                $stmt = $pdo->prepare("UPDATE mka_users SET IsPaid = 'y', IsTrial = 'n' WHERE UserUUID = ?");
+                $stmt = $pdo->prepare("UPDATE mka_users SET IsPaid = 'y', Status = 'n' WHERE UserUUID = ?");
                 $stmt->execute([ $userUUID]);
 
                 // Insert user_subscriptions row
@@ -107,7 +107,7 @@ class IpnHandler
          
        
         if ($userUUID) {
-                $stmt = $pdo->prepare("UPDATE mka_users SET IsPaid = 'y', IsTrial = 'n' WHERE UserUUID = ?");
+                $stmt = $pdo->prepare("UPDATE mka_users SET IsPaid = 'y', Status = 'n' WHERE UserUUID = ?");
                 $stmt->execute([ $userUUID]);
                 
                 //Check dup first
@@ -116,7 +116,7 @@ class IpnHandler
                 $check->execute([$subscriptionId]);
 
                 if ($check->fetch()) {
-                    error_log("IPN: Subscription ID {$subscriptionId} already exists — skipping insert.");
+                    error_log("IPN: Subscription ID {$subscriptionId} already exists ï¿½ skipping insert.");
                     return;
                 }
 

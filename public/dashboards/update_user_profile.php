@@ -1,1 +1,0 @@
-/opt/mka/api/dashboards/update_user_profile.php

@@ -16,7 +16,7 @@ include('_menu_loader.php');
     <meta content="MKAdvantage" name="author" />
 
     <!-- Favicon -->
-    <link rel="shortcut icon" href="img/favicon.ico">
+    <link rel="shortcut icon"href="/dashboards/img/favicon.ico">
 
     <!-- Toastr css -->
     <link href="plugins/toastr/css/toastr.min.css" rel="stylesheet">

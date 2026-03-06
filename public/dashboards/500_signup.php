@@ -45,7 +45,7 @@ BrevoMailer::send($to, $subject, $html);
     <meta content="WebAppLayers" name="author" />
 
     <!-- Favicon -->
-    <link rel="shortcut icon" href="img/favicon.ico">
+    <link rel="shortcut icon"href="/dashboards/img/favicon.ico">
 
     <!-- Bootstrap css -->
     <link href="css/bootstrap.min.css" rel="stylesheet" type="text/css">

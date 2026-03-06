@@ -1,1 +1,0 @@
-/opt/mka/api/formbuilder/refresh_csrf.php

@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta name="author" content="MKAdvantage, Inc.">
 
     <!-- App favicon -->
-    <link rel="shortcut icon" href="img/favicon.ico">
+    <link rel="shortcut icon"href="/dashboards/img/favicon.ico">
 
     <!-- Theme Config Js -->
     <script src="js/config.js"></script>

@@ -1,5 +1,5 @@
 <?php
-$GLOBALS['current_dashboard'] = 'patientportal';
+$GLOBALS['current_dashboard'] = 'speechapp';
 include('../../dashboards/_init.php');
 include('_menu_loader.php');
 ?>
