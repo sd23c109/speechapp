@@ -3,7 +3,6 @@ namespace MKA\Payment;
 
 class StripeConfig {
 
-    // REPLACE THESE WITH YOUR ACTUAL KEYS
     const SECRET_KEY = '';
     const PUBLISHABLE_KEY = '';
 
@@ -15,15 +14,18 @@ class StripeConfig {
     const PRODUCT_SLP = 'prod_TwatKd9fk0c5RE';
     const PRODUCT_PATIENT = 'prod_TwaxoMq1Dql8U7';
 
-    // Webhook secret (you'll get this when setting up webhook)
     const WEBHOOK_SECRET = '';
 
     public static function getSecretKey() {
-        return self::SECRET_KEY;
+        return getenv('STRIPE_SECRET_KEY') ?: self::SECRET_KEY;
     }
 
     public static function getPublishableKey() {
-        return self::PUBLISHABLE_KEY;
+        return getenv('STRIPE_PUBLISHABLE_KEY') ?: self::PUBLISHABLE_KEY;
+    }
+
+    public static function getWebhookSecret() {
+        return getenv('STRIPE_WEBHOOK_SECRET') ?: self::WEBHOOK_SECRET;
     }
 
     public static function getPriceId($userType) {

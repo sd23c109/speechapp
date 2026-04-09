@@ -331,7 +331,22 @@ if ($status === 'confirmemail'){
 ?>
 
 
-<!-- App js -->
+<?php if (isset($_SESSION['toast_warning'])): ?>
+    <script>
+        $(document).ready(function () {
+            toastr.options = {
+                "closeButton": true,
+                "progressBar": true,
+                "positionClass": "toast-top-center",
+                "timeOut": "6000"
+            };
+            toastr.warning("<?= addslashes($_SESSION['toast_warning']) ?>", "Checkout Cancelled");
+        });
+    </script>
+    <?php
+    unset($_SESSION['toast_warning']);
+endif;
+?>
 
 
 </body>

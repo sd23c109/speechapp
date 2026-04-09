@@ -138,20 +138,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     </div>
 
                                     <div class="mb-3">
-                                        <label class="form-label">I am a:</label><br>
-                                        <div class="mb-2">
-                                            <div class="form-check form-check-inline">
-                                                <input type="radio" class="form-check-input" name="user_type" id="typePatient" value="end_user" checked>
-                                                <label class="form-check-label" for="typePatient">Patient/Parent ($10/month)</label>
-                                            </div>
-                                            <div class="form-check form-check-inline">
-                                                <input type="radio" class="form-check-input" name="user_type" id="typeSLP" value="enterprise_admin">
-                                                <label class="form-check-label" for="typeSLP">Speech Therapist/SLP ($100/month)</label>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div class="mb-3">
                                         <label class="form-label">Start with:</label><br>
                                         <div class="mb-2">
                                             <div class="form-check form-check-inline">
@@ -161,6 +147,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                             <div class="form-check form-check-inline">
                                                 <input type="radio" class="form-check-input" name="start_mode" id="startPaid" value="paid">
                                                 <label class="form-check-label" for="startPaid">Start Subscription</label>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Only show plan selection when paying -->
+                                    <div class="mb-3" id="planSelection" style="display:none;">
+                                        <label class="form-label">I am a:</label><br>
+                                        <div class="mb-2">
+                                            <div class="form-check form-check-inline">
+                                                <input type="radio" class="form-check-input" name="user_type" id="typePatient" value="end_user" checked>
+                                                <label class="form-check-label" for="typePatient">Patient/Parent ($10/month)</label>
+                                            </div>
+                                            <div class="form-check form-check-inline">
+                                                <input type="radio" class="form-check-input" name="user_type" id="typeSLP" value="enterprise_admin">
+                                                <label class="form-check-label" for="typeSLP">Speech Therapist/SLP ($100/month)</label>
                                             </div>
                                         </div>
                                     </div>
@@ -228,20 +229,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     document.querySelectorAll('input[name="start_mode"]').forEach(el => {
         el.addEventListener('change', function() {
             const container = document.getElementById('startButtons');
+            const planSelection = document.getElementById('planSelection');
 
             if (this.id === 'startTrial') {
+                planSelection.style.display = 'none';
                 container.innerHTML = `<button type="submit" class="btn btn-primary fw-semibold py-2">Start Trial</button>`;
             } else {
+                planSelection.style.display = 'block';
                 container.innerHTML = `
-                    <button type="button" class="btn btn-primary fw-semibold py-2" id="payNowTrigger" disabled>
-                        Subscribe Now
-                    </button>
-                `;
+                <button type="button" class="btn btn-primary fw-semibold py-2" id="payNowTrigger" disabled>
+                    Subscribe Now
+                </button>
+            `;
                 validateSignupFields();
             }
         });
     });
-
     // Field validation
     document.querySelectorAll('[id^="mka_"]').forEach(input => {
         input.addEventListener('input', validateSignupFields);

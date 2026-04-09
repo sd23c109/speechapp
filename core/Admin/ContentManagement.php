@@ -20,41 +20,55 @@ class ContentManagement {
      * 2. Enterprise users: System content + their own content (up to tier limit)
      * 3. End users: Their parent admin's content (up to parent's tier limit)
      */
+
     public static function getAvailableContent(string $userUuid, string $contentType): array {
         global $pdo;
 
-        // Get user info and tier
+        // Step 1: Get user info only — don't fail if no subscription exists
         $stmt = $pdo->prepare("
-            SELECT u.user_type, u.parent_user_uuid, pt.name as tier_name, pt.limit_sounds_words
-            FROM mka_users u
-            LEFT JOIN user_subscriptions us ON u.UserUUID = us.user_uuid 
-                AND us.status IN ('trial', 'active')
-            LEFT JOIN product_tiers pt ON us.tier_uuid = pt.tier_uuid
-            WHERE u.UserUUID = ?
-            ORDER BY us.started_at DESC
-            LIMIT 1
-        ");
+        SELECT user_type, parent_user_uuid
+        FROM mka_users
+        WHERE UserUUID = ?
+    ");
         $stmt->execute([$userUuid]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        error_log("getAvailableContent DEBUG: userUuid=$userUuid user=" . json_encode($user));  // ADD THIS
+
 
         if (!$user) {
             return [];
         }
 
-        $limit = $user['limit_sounds_words'] ?? 0;
-        $isSuperUser = ($user['user_type'] === 'super_user');
-        $isEnterpriseAdmin = ($user['user_type'] === 'enterprise_admin');
-        $isEndUser = ($user['user_type'] === 'end_user');
+        // Step 2: Get tier limit separately — defaults to 0 (unlimited) if no subscription row
+        $stmt = $pdo->prepare("
+        SELECT pt.limit_sounds_words
+        FROM user_subscriptions us
+        INNER JOIN product_tiers pt ON us.tier_uuid = pt.tier_uuid
+        WHERE us.user_uuid = ?
+          AND us.status IN ('trial', 'active')
+        ORDER BY us.started_at DESC
+        LIMIT 1
+    ");
+        $stmt->execute([$userUuid]);
+        $tier = $stmt->fetch(PDO::FETCH_ASSOC);
+        $limit = $tier['limit_sounds_words'] ?? 0;
 
-        // Determine which owner_user_uuid to query
+        $isSuperUser      = ($user['user_type'] === 'super_user');
+        $isEnterpriseAdmin = ($user['user_type'] === 'enterprise_admin');
+        $isEndUser        = ($user['user_type'] === 'end_user');
+
+        // Step 3: Determine which owner UUID to query content for
         $ownerUuid = null;
         if ($isSuperUser || $isEnterpriseAdmin) {
             $ownerUuid = $userUuid;
-        } elseif ($isEndUser && $user['parent_user_uuid']) {
+        } elseif ($isEndUser && !empty($user['parent_user_uuid'])) {
+            // Invited end user — use parent's content
             $ownerUuid = $user['parent_user_uuid'];
         }
+        // If end_user with no parent, ownerUuid stays null → returns system content only
 
-        // Query based on content type
+        // Step 4: Query based on content type
         switch ($contentType) {
             case 'consonant':
                 return self::getConsonants($ownerUuid, $limit, $isSuperUser);
@@ -70,13 +84,12 @@ class ContentManagement {
                 return [];
         }
     }
-
     private static function getConsonants(?string $ownerUuid, int $limit, bool $isSuperUser): array {
         global $pdo;
 
         $sql = "
-            SELECT consonant_id, consonant_code as code, consonant_label as label, 
-                   image_filename, image_path, display_order, owner_user_uuid
+            SELECT consonant_id, consonant_code as code, consonant_label as label,
+                   consonant_folder, image_filename, image_path, display_order, owner_user_uuid
             FROM exercise_consonants
             WHERE is_active = 1 
               AND (owner_user_uuid IS NULL OR owner_user_uuid = ?)
@@ -90,7 +103,9 @@ class ContentManagement {
         $stmt = $pdo->prepare($sql);
 
         if (!$isSuperUser && $limit > 0) {
-            $stmt->execute([$ownerUuid, $limit]);
+            $stmt->bindValue(1, $ownerUuid, PDO::PARAM_STR);
+            $stmt->bindValue(2, (int)$limit, PDO::PARAM_INT);
+            $stmt->execute();
         } else {
             $stmt->execute([$ownerUuid]);
         }
@@ -103,7 +118,7 @@ class ContentManagement {
 
         $sql = "
             SELECT vowel_id, vowel_code as code, vowel_label as label, vowel_type,
-                   image_filename, image_path, display_order, owner_user_uuid
+                   vowel_folder, image_filename, image_path, display_order, owner_user_uuid
             FROM exercise_vowels
             WHERE is_active = 1 
               AND (owner_user_uuid IS NULL OR owner_user_uuid = ?)
@@ -117,7 +132,9 @@ class ContentManagement {
         $stmt = $pdo->prepare($sql);
 
         if (!$isSuperUser && $limit > 0) {
-            $stmt->execute([$ownerUuid, $limit]);
+            $stmt->bindValue(1, $ownerUuid, PDO::PARAM_STR);
+            $stmt->bindValue(2, (int)$limit, PDO::PARAM_INT);
+            $stmt->execute();
         } else {
             $stmt->execute([$ownerUuid]);
         }
@@ -129,19 +146,17 @@ class ContentManagement {
         global $pdo;
 
         $sql = "
-            SELECT 
+            SELECT
                 cv.cv_id,
                 cv.cv_code,
+                cv.cv_type,
+                cv.cv_folder,
                 cv.icon_filename,
                 cv.icon_path,
                 cv.display_order,
-                cv.owner_user_uuid,
-                c.consonant_code,
-                v.vowel_code
+                cv.owner_user_uuid
             FROM exercise_cv_blends cv
-            INNER JOIN exercise_consonants c ON cv.consonant_id = c.consonant_id
-            INNER JOIN exercise_vowels v ON cv.vowel_id = v.vowel_id
-            WHERE cv.is_active = 1 
+            WHERE cv.is_active = 1
               AND (cv.owner_user_uuid IS NULL OR cv.owner_user_uuid = ?)
             ORDER BY cv.display_order ASC, cv.cv_code ASC
         ";
@@ -153,7 +168,9 @@ class ContentManagement {
         $stmt = $pdo->prepare($sql);
 
         if (!$isSuperUser && $limit > 0) {
-            $stmt->execute([$ownerUuid, $limit]);
+            $stmt->bindValue(1, $ownerUuid, PDO::PARAM_STR);
+            $stmt->bindValue(2, (int)$limit, PDO::PARAM_INT);
+            $stmt->execute();
         } else {
             $stmt->execute([$ownerUuid]);
         }
@@ -189,7 +206,9 @@ class ContentManagement {
         $stmt = $pdo->prepare($sql);
 
         if (!$isSuperUser && $limit > 0) {
-            $stmt->execute([$ownerUuid, $limit]);
+            $stmt->bindValue(1, $ownerUuid, PDO::PARAM_STR);
+            $stmt->bindValue(2, (int)$limit, PDO::PARAM_INT);
+            $stmt->execute();
         } else {
             $stmt->execute([$ownerUuid]);
         }
@@ -201,7 +220,7 @@ class ContentManagement {
         global $pdo;
 
         $sql = "
-            SELECT word_id, word_text, word_category, syllable_count, syllable_breakdown,
+            SELECT word_id, word_text, word_category, words_folder, syllable_count, syllable_breakdown,
                    image_filename, image_path, display_order, owner_user_uuid
             FROM exercise_words
             WHERE is_active = 1 
@@ -216,7 +235,9 @@ class ContentManagement {
         $stmt = $pdo->prepare($sql);
 
         if (!$isSuperUser && $limit > 0) {
-            $stmt->execute([$ownerUuid, $limit]);
+            $stmt->bindValue(1, $ownerUuid, PDO::PARAM_STR);
+            $stmt->bindValue(2, (int)$limit, PDO::PARAM_INT);
+            $stmt->execute();
         } else {
             $stmt->execute([$ownerUuid]);
         }

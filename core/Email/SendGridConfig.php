@@ -4,8 +4,7 @@ namespace MKA\Email;
 class SendGridConfig {
 
     public static function getApiKey() {
-        return '
-';
+        return getenv('SENDGRID_API_KEY');
     }
 
     public static function getFromEmail() {

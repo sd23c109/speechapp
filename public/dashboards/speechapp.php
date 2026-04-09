@@ -226,6 +226,12 @@ error_log("===========================");
         .change-card-btn:hover {
             background-color: #218838;
         }
+        .syllable-btn {
+            background-color: #007bff;
+        }
+        .syllable-btn:hover {
+            background-color: #0069d9;
+        }
 
         /* Top image */
         .exercise-main-img {
@@ -515,14 +521,15 @@ error_log("===========================");
                             <!-- Top category buttons -->
                             <div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
                                 <div class="btn-group flex-wrap" role="group">
-                                    <button class="btn btn-primary category-btn" data-panel="panel-letters">Letter Sounds</button>
-                                    <button class="btn btn-primary category-btn" data-panel="panel-cv">CV Blending</button>
-                                    <button class="btn btn-primary category-btn" data-panel="panel-3cv">3CV</button>
+                                    <button class="btn btn-primary category-btn" data-panel="panel-letters">Sounds in Isolation</button>
+                                    <button class="btn btn-primary category-btn" data-panel="panel-cv">CV</button>
+                                    <button class="btn btn-primary category-btn" data-panel="panel-3cv">CV Blending</button>
                                 </div>
 
                                 <div class="btn-group flex-wrap" role="group">
-                                    <button class="btn btn-info category-btn" data-panel="panel-soundmixing">Sound Mixing</button>
+                                    <button class="btn btn-info category-btn" data-panel="panel-soundmixing">Syllable Shifts</button>
                                     <button class="btn btn-info category-btn" data-panel="panel-wordsyllable">Words</button>
+                                    <button class="btn btn-info category-btn" data-panel="panel-syllables">CV-CV Blending</button>
                                 </div>
 
                                 <div class="btn-group flex-wrap" role="group">
@@ -559,6 +566,9 @@ error_log("===========================");
                             </div>
                             <div id="panel-wordsyllable" class="slide-panel">
                                 <div class="d-flex flex-wrap py-2" id="wordsyllable-list"></div>
+                            </div>
+                            <div id="panel-syllables" class="slide-panel">
+                                <div class="d-flex flex-wrap py-2" id="syllables-list"></div>
                             </div>
 
                             <!-- Assignments panel -->
@@ -773,13 +783,13 @@ error_log("===========================");
                         <!-- Exercise Controls -->
                         <div class="d-flex gap-2 mb-3 align-items-center flex-wrap">
                             <div class="btn-group flex-wrap" role="group">
-                                <button class="btn btn-sm btn-primary modal-category-btn" data-type="letters">Letter Sounds</button>
-                                <button class="btn btn-sm btn-primary modal-category-btn" data-type="cv">CV Blending</button>
-                                <button class="btn btn-sm btn-primary modal-category-btn" data-type="3cv">3CV</button>
+                                <button class="btn btn-sm btn-primary modal-category-btn" data-type="letters">Sounds in Isolation</button>
+                                <button class="btn btn-sm btn-primary modal-category-btn" data-type="cv">CV</button>
+                                <button class="btn btn-sm btn-primary modal-category-btn" data-type="3cv">CV Blending</button>
                             </div>
 
                             <div class="btn-group flex-wrap" role="group">
-                                <button class="btn btn-sm btn-info modal-category-btn" data-type="soundmixing">Sound Mixing</button>
+                                <button class="btn btn-sm btn-info modal-category-btn" data-type="soundmixing">Syllable Shifts</button>
                                 <button class="btn btn-sm btn-info modal-category-btn" data-type="wordsyllable">Word/Syllable</button>
                             </div>
 
@@ -1013,6 +1023,15 @@ error_log("===========================");
     let WORDS = [];
     let CV_BLEND_ITEMS = [];
     let BLEND_3CV_ITEMS = [];
+    let CONSONANT_IMAGES = {};
+    let VOWEL_IMAGES = {};
+    let CV_IMAGES = {};
+    let WORD_IMAGES = {};
+    let CONSONANT_FOLDER_MAP = {};
+    let VOWEL_FOLDER_MAP = {};
+    let CV_FOLDER_MAP = {};
+    let WORD_FOLDER_MAP = {};
+    let WORD_SYLLABLE_MAP = {};
 
     // SUCCESS MEDIA VARIABLES - DECLARE FIRST
     let currentMedia = [];
@@ -1090,6 +1109,10 @@ error_log("===========================");
             const consData = await consResp.json();
             if (consData.status === 'success') {
                 CONSONANTS = consData.data.map(c => c.code);
+                consData.data.forEach(c => {
+                    if (c.image_path) CONSONANT_IMAGES[c.code] = c.image_path;
+                    CONSONANT_FOLDER_MAP[c.code] = c.consonant_folder || null;
+                });
             }
 
             const vowResp = await fetch('/dashboards/api/admin/get_content.php?type=vowel');
@@ -1099,21 +1122,34 @@ error_log("===========================");
                     code: v.code,
                     label: v.label
                 }));
+                vowData.data.forEach(v => {
+                    if (v.image_path) VOWEL_IMAGES[v.code] = v.image_path;
+                    VOWEL_FOLDER_MAP[v.code] = v.vowel_folder || null;
+                });
             }
 
             const wordResp = await fetch('/dashboards/api/admin/get_content.php?type=word');
             const wordData = await wordResp.json();
             if (wordData.status === 'success') {
                 WORDS = wordData.data.map(w => w.word_text);
+                wordData.data.forEach(w => {
+                    if (w.image_path) WORD_IMAGES[w.word_text.toLowerCase()] = w.image_path;
+                    WORD_FOLDER_MAP[w.word_text] = w.words_folder || null;
+                    if (w.syllable_breakdown) WORD_SYLLABLE_MAP[w.word_text] = w.syllable_breakdown;
+                });
             }
 
             const cvResp = await fetch('/dashboards/api/admin/get_content.php?type=cv_blend');
             const cvData = await cvResp.json();
             if (cvData.status === 'success') {
-                CV_BLEND_ITEMS = cvData.data.map(cv => ({
-                    c: cv.consonant_code,
-                    v: cv.vowel_code
-                }));
+                CV_BLEND_ITEMS = cvData.data.map(cv => {
+                    const parts = cv.cv_code.split('-');
+                    const c = parts[0];
+                    const v = parts.slice(1).join('-');
+                    if (cv.icon_path) CV_IMAGES[cv.cv_code] = cv.icon_path;
+                    CV_FOLDER_MAP[cv.cv_code] = cv.cv_folder || null;
+                    return { c, v };
+                });
             }
 
             const cv3Resp = await fetch('/dashboards/api/admin/get_content.php?type=3cv_blend');
@@ -1135,6 +1171,7 @@ error_log("===========================");
 
     let SEQUENCE = [];
     const IMG_BASE = "/assets/portal/exercises/images/";
+    const ASSET_VER = "<?= filemtime('/opt/mka/public/assets/portal/exercises/images/generated_images_consonants') ?>";
 
     function getWhole(item) {
         return item.c + ' + ' + item.v;
@@ -1223,7 +1260,7 @@ error_log("===========================");
         const el = document.createElement('div');
         el.className = 'pill';
         const img = document.createElement('img');
-        img.src = src;
+        img.src = src + '?v=' + ASSET_VER;
         img.alt = alt;
         img.style.width = "90px";
         img.style.height = "90px";
@@ -1273,17 +1310,42 @@ error_log("===========================");
     function buildLists() {
         const basePath = "/assets/portal/exercises/images/"
 
+        function buildAccordion(parent, label, items, buildPill) {
+            const group = document.createElement('div');
+            group.style.cssText = 'width:100%; margin-bottom:4px;';
+
+            const btn = document.createElement('button');
+            btn.style.cssText = 'width:100%; background:#28a745; color:#fff; border:none; border-radius:4px; padding:8px 14px; text-align:left; font-weight:600; font-size:1rem; cursor:pointer; display:flex; align-items:center; gap:8px;';
+            btn.innerHTML = `<i class="fa fa-folder"></i> ${label}`;
+
+            const content = document.createElement('div');
+            content.style.cssText = 'display:none; flex-wrap:wrap; padding:6px 0;';
+
+            items.forEach(item => content.appendChild(buildPill(item)));
+
+            btn.addEventListener('click', () => {
+                content.style.display = content.style.display === 'none' ? 'flex' : 'none';
+                btn.querySelector('i').className = content.style.display === 'none' ? 'fa fa-folder' : 'fa fa-folder-open';
+            });
+
+            group.appendChild(btn);
+            group.appendChild(content);
+            parent.appendChild(group);
+        }
+
         const $letters = document.getElementById('lettersounds-list')
         const $cv      = document.getElementById('cv-list')
         const $3cv     = document.getElementById('3cv-list')
         const $sm      = document.getElementById('soundmixing-list')
         const $ws      = document.getElementById('wordsyllable-list')
+        const $syl     = document.getElementById('syllables-list')
 
         if ($letters) $letters.innerHTML = ''
         if ($cv)      $cv.innerHTML      = ''
         if ($3cv)     $3cv.innerHTML     = ''
         if ($sm)      $sm.innerHTML      = ''
         if ($ws)      $ws.innerHTML      = ''
+        if ($syl)     $syl.innerHTML     = ''
 
         SEQUENCE = [
             ...VOWELS.map(v => ({type:"vowel", id:v.code})),
@@ -1291,82 +1353,162 @@ error_log("===========================");
         ];
 
         if ($letters) {
-            addListHeader($letters, 'Consonants')
+            // Group consonants by folder
+            const consFolders = {};
             CONSONANTS.forEach(c => {
-                const src = `${basePath}consonant_${c}.png`
-                const pill = buttonPillImage(src, c, () => {
-                    handleItemSelection({ type: "consonant", id: c })
-                })
-                handlePillPress({ type: "consonant", id: c }, pill);
-                $letters.appendChild(pill)
-            })
+                const folder = CONSONANT_FOLDER_MAP[c] || 'Other';
+                if (!consFolders[folder]) consFolders[folder] = [];
+                consFolders[folder].push(c);
+            });
+            const consFolderNames = Object.keys(consFolders).filter(f => f !== 'Other').sort();
+            if (consFolders['Other']) consFolderNames.push('Other');
 
-            addListHeader($letters, 'Vowels')
+            addListHeader($letters, 'Consonants');
+            consFolderNames.forEach(folder => {
+                buildAccordion($letters, folder, consFolders[folder], c => {
+                    const src = CONSONANT_IMAGES[c] || `${basePath}consonant_${c}.png`;
+                    const pill = buttonPillImage(src, c, () => handleItemSelection({ type: "consonant", id: c }));
+                    handlePillPress({ type: "consonant", id: c }, pill);
+                    return pill;
+                });
+            });
+
+            // Group vowels by folder
+            const vowFolders = {};
             VOWELS.forEach(v => {
-                const src = `${basePath}vowel_${v.code}.png`
-                const pill = buttonPillImage(src, v.label, () => {
-                    handleItemSelection({ type: "vowel", id: v.code })
-                })
-                handlePillPress({ type: "vowel", id: v.code }, pill);
-                $letters.appendChild(pill)
-            })
+                const folder = VOWEL_FOLDER_MAP[v.code] || 'Other';
+                if (!vowFolders[folder]) vowFolders[folder] = [];
+                vowFolders[folder].push(v);
+            });
+            const vowFolderNames = Object.keys(vowFolders).filter(f => f !== 'Other').sort();
+            if (vowFolders['Other']) vowFolderNames.push('Other');
+
+            addListHeader($letters, 'Vowels');
+            vowFolderNames.forEach(folder => {
+                buildAccordion($letters, folder, vowFolders[folder], v => {
+                    const src = VOWEL_IMAGES[v.code] || `${basePath}vowel_${v.code}.png`;
+                    const pill = buttonPillImage(src, v.label, () => handleItemSelection({ type: "vowel", id: v.code }));
+                    handlePillPress({ type: "vowel", id: v.code }, pill);
+                    return pill;
+                });
+            });
         }
 
         if ($cv) {
+            const cvFolders = {};
             CV_BLEND_ITEMS.forEach(item => {
-                const label = getWhole(item)
-                const pill = buttonPill(label, () => {
-                    renderBlendingExercise(item.c, item.v, 'cv')
-                })
-                $cv.appendChild(pill)
-            })
+                const key = `${item.c}-${item.v}`;
+                const folder = CV_FOLDER_MAP[key] || 'Other';
+                if (!cvFolders[folder]) cvFolders[folder] = [];
+                cvFolders[folder].push(item);
+            });
+            const cvFolderNames = Object.keys(cvFolders).filter(f => f !== 'Other').sort();
+            if (cvFolders['Other']) cvFolderNames.push('Other');
+
+            cvFolderNames.forEach(folder => {
+                buildAccordion($cv, folder, cvFolders[folder], item => {
+                    return buttonPill(`${item.c}${item.v}`, () => renderBlendingExercise(item.c, item.v, 'cv'));
+                });
+            });
         }
 
         if ($3cv) {
-            BLEND_3CV_ITEMS.forEach(item => {
-                const label = `${item.c}${item.v}`
-                $3cv.appendChild(
-                    buttonPill(label, () => {
-                        renderBlendingExercise(item.c, item.v, '3cv')
-                    })
-                )
-            })
+            const blend3Folders = {};
+            CV_BLEND_ITEMS.forEach(item => {
+                const key = `${item.c}-${item.v}`;
+                const folder = CV_FOLDER_MAP[key] || 'Other';
+                if (!blend3Folders[folder]) blend3Folders[folder] = [];
+                blend3Folders[folder].push(item);
+            });
+            const blend3FolderNames = Object.keys(blend3Folders).filter(f => f !== 'Other').sort();
+            if (blend3Folders['Other']) blend3FolderNames.push('Other');
+
+            blend3FolderNames.forEach(folder => {
+                buildAccordion($3cv, folder, blend3Folders[folder], item => {
+                    return buttonPill(`${item.c} + ${item.v}`, () => renderBlendingExercise(item.c, item.v, '3cv'));
+                });
+            });
         }
 
         if ($sm) {
             CV_BLEND_ITEMS.forEach(item => {
-                const label = `${item.c}-${item.v}`
+                const id = `${item.c}-${item.v}`
+                const label = `${item.c}${item.v}`
                 const pill = buttonPill(label, () => {
-                    selectSoundMix({ type: "cv", id: label })
+                    selectSoundMix({ type: "cv", id: id })
                 })
-                handlePillPress({ type: "cv", id: label }, pill);
+                handlePillPress({ type: "cv", id: id }, pill);
                 $sm.appendChild(pill)
             })
         }
 
+        const WORD_FOLDER_ORDER = ['CVCV','VC','CV1CV2','C1V1C2V2 Stage 1','C1V1C2V2 Stage 2','CVC- Bilabial','CVC-Alveolar','CVC-Bilabial/Alveolar'];
+
         if ($ws) {
+            const wordFolders = {};
             WORDS.forEach(w => {
-                const pill = buttonPill(w, () => {
-                    handleItemSelection({ type: "word", id: w })
-                })
-                handlePillPress({ type: "word", id: w }, pill);
-                $ws.appendChild(pill)
-            })
+                const folder = WORD_FOLDER_MAP[w] || 'Other';
+                if (!wordFolders[folder]) wordFolders[folder] = [];
+                wordFolders[folder].push(w);
+            });
+            const wordFolderNames = Object.keys(wordFolders).filter(f => f !== 'Other').sort((a, b) => {
+                const ai = WORD_FOLDER_ORDER.indexOf(a), bi = WORD_FOLDER_ORDER.indexOf(b);
+                if (ai === -1 && bi === -1) return a.localeCompare(b);
+                if (ai === -1) return 1;
+                if (bi === -1) return -1;
+                return ai - bi;
+            });
+            if (wordFolders['Other']) wordFolderNames.push('Other');
+
+            wordFolderNames.forEach(folder => {
+                buildAccordion($ws, folder, wordFolders[folder], w => {
+                    const pill = buttonPill(w, () => selectWordExercise(w));
+                    handlePillPress({ type: "word", id: w }, pill);
+                    return pill;
+                });
+            });
+        }
+
+        if ($syl) {
+            // Only words with a syllable breakdown
+            const sylWords = WORDS.filter(w => WORD_SYLLABLE_MAP[w]);
+            const sylFolders = {};
+            sylWords.forEach(w => {
+                const folder = WORD_FOLDER_MAP[w] || 'Other';
+                if (!sylFolders[folder]) sylFolders[folder] = [];
+                sylFolders[folder].push(w);
+            });
+            const sylFolderNames = Object.keys(sylFolders).filter(f => f !== 'Other').sort((a, b) => {
+                const ai = WORD_FOLDER_ORDER.indexOf(a), bi = WORD_FOLDER_ORDER.indexOf(b);
+                if (ai === -1 && bi === -1) return a.localeCompare(b);
+                if (ai === -1) return 1;
+                if (bi === -1) return -1;
+                return ai - bi;
+            });
+            if (sylFolders['Other']) sylFolderNames.push('Other');
+
+            sylFolderNames.forEach(folder => {
+                buildAccordion($syl, folder, sylFolders[folder], w => {
+                    const breakdown = WORD_SYLLABLE_MAP[w];
+                    const label = breakdown.split('-').join(' + ');
+                    return buttonPill(label, () => renderSyllableExercise(w));
+                });
+            });
         }
     }
 
     function iconPathFor(item) {
-        if (item.type === "vowel")     return `${IMG_BASE}vowel_${item.id}.png`;
-        if (item.type === "consonant") return `${IMG_BASE}consonant_${item.id}.png`;
-        if (item.type === "cv")        return `${IMG_BASE}cv_${item.id.replace('-', '_')}.jpg`;
+        if (item.type === "vowel")     return VOWEL_IMAGES[item.id] || `${IMG_BASE}vowel_${item.id}.png`;
+        if (item.type === "consonant") return CONSONANT_IMAGES[item.id] || `${IMG_BASE}consonant_${item.id}.png`;
+        if (item.type === "cv")        return CV_IMAGES[item.id] || `${IMG_BASE}cv_${item.id.replace('-', '_')}.jpg`;
         if (item.type === "3cv")        return `${IMG_BASE}3cv_${item.id.replace('-', '_')}.jpg`;
         return "";
     }
 
     function topPathFor(item) {
-        if (item.type === "vowel")     return `${IMG_BASE}top_vowel_${item.id}.png`;
-        if (item.type === "consonant") return `${IMG_BASE}top_consonant_${item.id}.png`;
-        if (item.type === "cv")        return `${IMG_BASE}top_cv_${item.id.replace('-', '_')}.jpg`;
+        if (item.type === "vowel")     return VOWEL_IMAGES[item.id] || `${IMG_BASE}top_vowel_${item.id}.png`;
+        if (item.type === "consonant") return CONSONANT_IMAGES[item.id] || `${IMG_BASE}top_consonant_${item.id}.png`;
+        if (item.type === "cv")        return CV_IMAGES[item.id] || `${IMG_BASE}top_cv_${item.id.replace('-', '_')}.jpg`;
         if (item.type === "3cv")        return `${IMG_BASE}top_3cv_${item.id.replace('-', '_')}.jpg`;
         return "";
     }
@@ -1396,7 +1538,7 @@ error_log("===========================");
 
             if (hasTop) {
                 const topImg = document.createElement('img');
-                topImg.src = topSrc;
+                topImg.src = topSrc + '?v=' + ASSET_VER;
                 topImg.alt = label;
                 topImg.className = 'exercise-main-img';
                 content.appendChild(topImg);
@@ -1408,7 +1550,7 @@ error_log("===========================");
 
             if (hasIcon) {
                 const iconImg = document.createElement('img');
-                iconImg.src = iconSrc;
+                iconImg.src = iconSrc + '?v=' + ASSET_VER;
                 iconImg.alt = label + " icon";
                 iconImg.className = 'exercise-icon-img';
                 content.appendChild(iconImg);
@@ -1419,12 +1561,11 @@ error_log("===========================");
 
         if (item.type === 'word') {
             const word    = item.id;
-            const topBase = `${IMG_BASE}top_${word.toLowerCase()}`;
-            const topSrc  = await firstExistingImage(topBase);
+            const topSrc  = WORD_IMAGES[word.toLowerCase()] || await firstExistingImage(`${IMG_BASE}top_${word.toLowerCase()}`);
 
             if (topSrc) {
                 const topImg = document.createElement('img');
-                topImg.src = topSrc;
+                topImg.src = topSrc + '?v=' + ASSET_VER;
                 topImg.alt = word;
                 topImg.className = 'exercise-main-img';
                 content.appendChild(topImg);
@@ -1434,29 +1575,9 @@ error_log("===========================");
                 content.appendChild(span);
             }
 
-            const left  = word.slice(0, 2);
-            const right = word.slice(2);
-
-            const bottomRow = document.createElement('div');
-            bottomRow.className = 'word-bottom-row';
-
-            const leftSpan = document.createElement('span');
-            leftSpan.className = 'word-part';
-            leftSpan.textContent = left;
-
-            const plusSpan = document.createElement('span');
-            plusSpan.className = 'word-plus';
-            plusSpan.textContent = '+';
-
-            const rightSpan = document.createElement('span');
-            rightSpan.className = 'word-part';
-            rightSpan.textContent = right;
-
-            bottomRow.appendChild(leftSpan);
-            bottomRow.appendChild(plusSpan);
-            bottomRow.appendChild(rightSpan);
-
-            content.appendChild(bottomRow);
+            const wordSpan = document.createElement('span');
+            wordSpan.textContent = word;
+            content.appendChild(wordSpan);
             return;
         }
 
@@ -1470,15 +1591,12 @@ error_log("===========================");
             }
 
             const topSrc   = await firstExistingImage(topBase);
-            const consBase = `${IMG_BASE}consonant_${cons}`;
-            const vowelBase= `${IMG_BASE}vowel_${vowelCode}`;
-
-            const consSrc  = await firstExistingImage(consBase);
-            const vowelSrc = await firstExistingImage(vowelBase);
+            const consSrc  = CONSONANT_IMAGES[cons] || await firstExistingImage(`${IMG_BASE}consonant_${cons}`);
+            const vowelSrc = VOWEL_IMAGES[vowelCode] || await firstExistingImage(`${IMG_BASE}vowel_${vowelCode}`);
 
             if (topSrc) {
                 const topImg = document.createElement('img');
-                topImg.src = topSrc;
+                topImg.src = topSrc + '?v=' + ASSET_VER;
                 topImg.alt = label;
                 topImg.className = 'exercise-main-img';
                 content.appendChild(topImg);
@@ -1493,7 +1611,7 @@ error_log("===========================");
 
             if (consSrc) {
                 const cImg = document.createElement('img');
-                cImg.src = consSrc;
+                cImg.src = consSrc + '?v=' + ASSET_VER;
                 cImg.alt = `Consonant ${cons}`;
                 bottomRow.appendChild(cImg);
             } else {
@@ -1504,7 +1622,7 @@ error_log("===========================");
 
             if (vowelSrc) {
                 const vImg = document.createElement('img');
-                vImg.src = vowelSrc;
+                vImg.src = vowelSrc + '?v=' + ASSET_VER;
                 vImg.alt = `Vowel ${vowelCode}`;
                 bottomRow.appendChild(vImg);
             } else {
@@ -1646,10 +1764,8 @@ error_log("===========================");
         }
 
         const topSrc   = await firstExistingImage(topBase);
-        const consBase = `${IMG_BASE}consonant_${cons}`;
-        const vowelBase= `${IMG_BASE}vowel_${vowelCode}`;
-        const consSrc  = await firstExistingImage(consBase);
-        const vowelSrc = await firstExistingImage(vowelBase);
+        const consSrc  = CONSONANT_IMAGES[cons] || await firstExistingImage(`${IMG_BASE}consonant_${cons}`);
+        const vowelSrc = VOWEL_IMAGES[vowelCode] || await firstExistingImage(`${IMG_BASE}vowel_${vowelCode}`);
 
         const label = prettyLabel(item);
 
@@ -1660,7 +1776,7 @@ error_log("===========================");
 
         if (topSrc) {
             const topImg = document.createElement('img');
-            topImg.src = topSrc;
+            topImg.src = topSrc + '?v=' + ASSET_VER;
             topImg.alt = label;
             topImg.className = 'exercise-main-img';
             content.appendChild(topImg);
@@ -1675,7 +1791,7 @@ error_log("===========================");
 
         if (consSrc) {
             const cImg = document.createElement('img');
-            cImg.src = consSrc;
+            cImg.src = consSrc + '?v=' + ASSET_VER;
             cImg.alt = `Consonant ${cons}`;
             bottomRow.appendChild(cImg);
         } else {
@@ -1686,7 +1802,7 @@ error_log("===========================");
 
         if (vowelSrc) {
             const vImg = document.createElement('img');
-            vImg.src = vowelSrc;
+            vImg.src = vowelSrc + '?v=' + ASSET_VER;
             vImg.alt = `Vowel ${vowelCode}`;
             bottomRow.appendChild(vImg);
         } else {
@@ -1799,10 +1915,8 @@ error_log("===========================");
                 topSrc  = await firstExistingImage(topBase);
                 hasTop  = !!topSrc;
 
-                const consBase   = `${IMG_BASE}consonant_${cons}`;
-                const vowelBase  = `${IMG_BASE}vowel_${vowelCode}`;
-                cvConsonantSrc   = await firstExistingImage(consBase);
-                cvVowelSrc       = await firstExistingImage(vowelBase);
+                cvConsonantSrc   = CONSONANT_IMAGES[cons] || await firstExistingImage(`${IMG_BASE}consonant_${cons}`);
+                cvVowelSrc       = VOWEL_IMAGES[vowelCode] || await firstExistingImage(`${IMG_BASE}vowel_${vowelCode}`);
                 hasIcon          = !!(cvConsonantSrc || cvVowelSrc);
             } else {
                 topSrc  = topPathFor(item);
@@ -1814,7 +1928,7 @@ error_log("===========================");
 
             if (hasTop) {
                 const topImg = document.createElement('img');
-                topImg.src = topSrc;
+                topImg.src = topSrc + '?v=' + ASSET_VER;
                 topImg.alt = label;
                 topImg.className = 'exercise-main-img';
                 content.appendChild(topImg);
@@ -1830,7 +1944,7 @@ error_log("===========================");
 
                 if (cvConsonantSrc) {
                     const cImg = document.createElement('img');
-                    cImg.src = cvConsonantSrc;
+                    cImg.src = cvConsonantSrc + '?v=' + ASSET_VER;
                     cImg.alt = `Consonant ${label}`;
                     bottomRow.appendChild(cImg);
                 } else {
@@ -1841,7 +1955,7 @@ error_log("===========================");
 
                 if (cvVowelSrc) {
                     const vImg = document.createElement('img');
-                    vImg.src = cvVowelSrc;
+                    vImg.src = cvVowelSrc + '?v=' + ASSET_VER;
                     vImg.alt = `Vowel ${label}`;
                     bottomRow.appendChild(vImg);
                 } else {
@@ -1855,7 +1969,7 @@ error_log("===========================");
             } else {
                 if (hasIcon) {
                     const iconImg = document.createElement('img');
-                    iconImg.src = iconSrc;
+                    iconImg.src = iconSrc + '?v=' + ASSET_VER;
                     iconImg.alt = label + " icon";
                     iconImg.className = 'exercise-icon-img';
                     content.appendChild(iconImg);
@@ -1934,63 +2048,242 @@ error_log("===========================");
         selectedCardIndex  = null;
 
         grid.innerHTML = '';
-        grid.classList.add('vertical-layout');
-        if (btnSuccess) btnSuccess.disabled = true;
+        grid.classList.remove('vertical-layout');
+
+        // Clone button to clear any stale handlers, then wire a fresh success listener
+        if (btnSuccess) {
+            const freshBtn = btnSuccess.cloneNode(true);
+            freshBtn.disabled = true;
+            btnSuccess.parentNode.replaceChild(freshBtn, btnSuccess);
+            freshBtn.addEventListener('click', function () {
+                if (selectedSuccessMedia) playSuccessMedia();
+            });
+        }
 
         const whole = `${cons}${vowelCode}`;
-        const parts = (mode === 'cv')
-            ? `${cons} + ${vowelCode}`
-            : whole;
-
-        const baseId    = `${cons}_${vowelCode}`;
-        const imageBase = (mode === '3cv')
-            ? `${IMG_BASE}top_3cv_${baseId}`
-            : `${IMG_BASE}top_cv_${baseId}`;
-
-        const wholeSrc = await firstExistingImage(imageBase);
-
-        for (let i = 0; i < count; i++) {
-            const card = document.createElement('div');
-            card.className = 'exercise-card';
-
-            const content = document.createElement('div');
-            content.className = 'exercise-content';
-
-            if (i < count - 1) {
-                const span = document.createElement('span');
-                span.className = 'cv-parts-text';
-                span.textContent = parts;
-                content.appendChild(span);
-            } else {
-                if (wholeSrc) {
-                    const img = document.createElement('img');
-                    img.src = wholeSrc;
-                    img.alt = whole;
-                    img.className = 'exercise-main-img';
-                    content.appendChild(img);
-                } else {
-                    const span = document.createElement('span');
-                    span.className = 'cv-whole-text';
-                    span.textContent = whole;
-                    content.appendChild(span);
-                }
-
-                const wholeSpan = document.createElement('span');
-                wholeSpan.className = 'cv-parts-text';
-                wholeSpan.textContent = whole;
-                wholeSpan.style.marginTop = '10px';
-                content.appendChild(wholeSpan);
-            }
-
-            card.appendChild(content);
-            wireExerciseCardClick(card);
-            grid.appendChild(card);
-        }
+        const parts = `${cons} + ${vowelCode}`;
 
         const title = document.getElementById('choices-title');
         const wrap  = document.getElementById('choices-wrap');
         if (title) { title.style.display = 'none'; title.textContent = ''; }
         if (wrap) wrap.innerHTML = '';
+
+        if (mode === 'cv') {
+            // Horizontal layout — like consonant/vowel exercises
+            const cvCode  = `${cons}-${vowelCode}`;
+            const imgSrc  = CV_IMAGES[cvCode] || null;
+
+            for (let i = 0; i < count; i++) {
+                const card = document.createElement('div');
+                card.className = 'exercise-card';
+                const content = document.createElement('div');
+                content.className = 'exercise-content';
+
+                if (imgSrc) {
+                    const img = document.createElement('img');
+                    img.src = imgSrc + '?v=' + ASSET_VER;
+                    img.alt = whole;
+                    img.className = 'exercise-main-img';
+                    content.appendChild(img);
+                }
+
+                const span = document.createElement('span');
+                span.className = 'cv-parts-text';
+                span.textContent = whole;
+                content.appendChild(span);
+
+                card.appendChild(content);
+                wireExerciseCardClick(card);
+                grid.appendChild(card);
+            }
+
+            // Toggle button below the cards, centered
+            if (wrap) {
+                wrap.style.justifyContent = 'center';
+                const toggleBtn = document.createElement('button');
+                toggleBtn.className = 'btn btn-success mt-2';
+                toggleBtn.style.cssText = 'font-size:1.25rem; padding:0.5rem 1.25rem; color:#fff;';
+                toggleBtn.textContent = 'CV';
+                toggleBtn.addEventListener('click', () => renderBlendingExercise(cons, vowelCode, '3cv'));
+                wrap.appendChild(toggleBtn);
+            }
+        } else {
+            // CV — vertical stack + image on right
+            grid.classList.add('vertical-layout');
+
+            const baseId   = `${cons}_${vowelCode}`;
+            const wholeSrc = await firstExistingImage(`${IMG_BASE}top_3cv_${baseId}`);
+
+            const cardsCol = document.createElement('div');
+            cardsCol.style.cssText = 'display:flex; flex-direction:column;';
+
+            for (let i = 0; i < count; i++) {
+                const card = document.createElement('div');
+                card.className = 'exercise-card';
+                const content = document.createElement('div');
+                content.className = 'exercise-content';
+                const span = document.createElement('span');
+                span.className = 'cv-parts-text';
+                span.textContent = parts;
+                content.appendChild(span);
+                card.appendChild(content);
+                wireExerciseCardClick(card);
+                cardsCol.appendChild(card);
+            }
+
+            const wholeCard = document.createElement('div');
+            wholeCard.className = 'exercise-card';
+            const wholeContent = document.createElement('div');
+            wholeContent.className = 'exercise-content';
+            const wholeSpan = document.createElement('span');
+            wholeSpan.className = 'cv-whole-text';
+            wholeSpan.textContent = whole;
+            wholeContent.appendChild(wholeSpan);
+            wholeCard.appendChild(wholeContent);
+            wireExerciseCardClick(wholeCard);
+            cardsCol.appendChild(wholeCard);
+
+            if (wholeSrc) {
+                const wrapper = document.createElement('div');
+                wrapper.style.cssText = 'display:flex; flex-direction:row; justify-content:center; align-items:center; gap:30px; width:100%; height:100%;';
+                const imageCol = document.createElement('div');
+                imageCol.style.cssText = 'display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;';
+                const img = document.createElement('img');
+                img.src = wholeSrc + '?v=' + ASSET_VER;
+                img.alt = whole;
+                img.style.cssText = 'max-width:160px; max-height:160px; object-fit:contain;';
+                imageCol.appendChild(img);
+
+                // Toggle button under the image
+                const toggleBtn = document.createElement('button');
+                toggleBtn.className = 'btn btn-success';
+                toggleBtn.style.cssText = 'font-size:1.25rem; padding:0.5rem 1.25rem; color:#fff;';
+                toggleBtn.textContent = 'C-V';
+                toggleBtn.addEventListener('click', () => renderBlendingExercise(cons, vowelCode, 'cv'));
+                imageCol.appendChild(toggleBtn);
+
+                wrapper.appendChild(cardsCol);
+                wrapper.appendChild(imageCol);
+                grid.appendChild(wrapper);
+            } else {
+                grid.appendChild(cardsCol);
+            }
+        }
+    }
+
+    async function renderSyllableExercise(word) {
+        const grid       = document.getElementById('exercise-view');
+        const btnSuccess = document.getElementById('btnSuccess');
+        if (!grid) return;
+
+        const count = getExerciseCount();
+
+        isSoundMixingMode  = false;
+        isWordSyllableMode = false;
+        isCVBlendingMode   = true;
+        cardSelectEnabled  = false;
+        selectedCardIndex  = null;
+
+        grid.innerHTML = '';
+        grid.classList.add('vertical-layout');
+
+        // Clone button and wire fresh success handler
+        if (btnSuccess) {
+            const freshBtn = btnSuccess.cloneNode(true);
+            freshBtn.disabled = true;
+            btnSuccess.parentNode.replaceChild(freshBtn, btnSuccess);
+            freshBtn.addEventListener('click', function () {
+                if (selectedSuccessMedia) playSuccessMedia();
+            });
+        }
+
+        const title = document.getElementById('choices-title');
+        const wrap  = document.getElementById('choices-wrap');
+        if (title) { title.style.display = 'none'; title.textContent = ''; }
+        if (wrap)  wrap.innerHTML = '';
+
+        const breakdown  = WORD_SYLLABLE_MAP[word] || word;
+        const partsLabel = breakdown.split('-').join(' + ');
+        const imgSrc     = WORD_IMAGES[word.toLowerCase()] || null;
+
+        const cardsCol = document.createElement('div');
+        cardsCol.style.cssText = 'display:flex; flex-direction:column;';
+
+        // count cards showing syllable breakdown (e.g. "bu + bble")
+        for (let i = 0; i < count; i++) {
+            const card = document.createElement('div');
+            card.className = 'exercise-card';
+            const content = document.createElement('div');
+            content.className = 'exercise-content';
+            const span = document.createElement('span');
+            span.className = 'cv-parts-text';
+            span.textContent = partsLabel;
+            content.appendChild(span);
+            card.appendChild(content);
+            wireExerciseCardClick(card);
+            cardsCol.appendChild(card);
+        }
+
+        // Final card showing whole word
+        const wholeCard = document.createElement('div');
+        wholeCard.className = 'exercise-card';
+        const wholeContent = document.createElement('div');
+        wholeContent.className = 'exercise-content';
+        const wholeSpan = document.createElement('span');
+        wholeSpan.className = 'cv-whole-text';
+        wholeSpan.textContent = word;
+        wholeContent.appendChild(wholeSpan);
+        wholeCard.appendChild(wholeContent);
+        wireExerciseCardClick(wholeCard);
+        cardsCol.appendChild(wholeCard);
+
+        if (imgSrc) {
+            const wrapper = document.createElement('div');
+            wrapper.style.cssText = 'display:flex; flex-direction:row; justify-content:center; align-items:center; gap:30px; width:100%; height:100%;';
+
+            const imageCol = document.createElement('div');
+            imageCol.style.cssText = 'display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;';
+            const img = document.createElement('img');
+            img.src = imgSrc + '?v=' + ASSET_VER;
+            img.alt = word;
+            img.style.cssText = 'max-width:160px; max-height:160px; object-fit:contain;';
+            imageCol.appendChild(img);
+
+            // Toggle button to Words exercise
+            const toggleBtn = document.createElement('button');
+            toggleBtn.className = 'btn btn-success';
+            toggleBtn.style.cssText = 'font-size:1.25rem; padding:0.5rem 1.25rem; color:#fff;';
+            toggleBtn.textContent = 'Word';
+            toggleBtn.addEventListener('click', () => {
+                if (!wordAssignments || wordAssignments.every(w => w === null)) {
+                    wordAssignments = new Array(getExerciseCount()).fill(word);
+                }
+                restoreWordGrid();
+            });
+            imageCol.appendChild(toggleBtn);
+
+            wrapper.appendChild(cardsCol);
+            wrapper.appendChild(imageCol);
+            grid.appendChild(wrapper);
+        } else {
+            grid.appendChild(cardsCol);
+        }
+
+        // Toggle button to Syllables under cards (when no image)
+        if (!imgSrc && wrap) {
+            wrap.style.justifyContent = 'center';
+            const toggleBtn = document.createElement('button');
+            toggleBtn.className = 'btn btn-success mt-2';
+            toggleBtn.style.cssText = 'font-size:1.25rem; padding:0.5rem 1.25rem; color:#fff;';
+            toggleBtn.textContent = 'Word';
+            toggleBtn.addEventListener('click', () => {
+                if (!wordAssignments || wordAssignments.every(w => w === null)) {
+                    wordAssignments = new Array(getExerciseCount()).fill(word);
+                }
+                restoreWordGrid();
+            });
+            wrap.appendChild(toggleBtn);
+        }
     }
 
     async function renderSingleStandardCard(card, item) {
@@ -2014,30 +2307,27 @@ error_log("===========================");
             topSrc = await firstExistingImage(topBase);
             hasTop = !!topSrc;
 
-            const consBase  = `${IMG_BASE}consonant_${cons}`;
-            const vowelBase = `${IMG_BASE}vowel_${vowelCode}`;
-
-            const consSrc  = await firstExistingImage(consBase);
-            const vowelSrc = await firstExistingImage(vowelBase);
+            const consSrc  = CONSONANT_IMAGES[cons] || await firstExistingImage(`${IMG_BASE}consonant_${cons}`);
+            const vowelSrc = VOWEL_IMAGES[vowelCode] || await firstExistingImage(`${IMG_BASE}vowel_${vowelCode}`);
 
             const bottomRow = document.createElement('div');
             bottomRow.className = 'cv-bottom-row';
 
             if (consSrc) {
                 const img = document.createElement('img');
-                img.src = consSrc;
+                img.src = consSrc + '?v=' + ASSET_VER;
                 bottomRow.appendChild(img);
             }
 
             if (vowelSrc) {
                 const img = document.createElement('img');
-                img.src = vowelSrc;
+                img.src = vowelSrc + '?v=' + ASSET_VER;
                 bottomRow.appendChild(img);
             }
 
             if (hasTop) {
                 const img = document.createElement('img');
-                img.src = topSrc;
+                img.src = topSrc + '?v=' + ASSET_VER;
                 img.className = "exercise-main-img";
                 content.appendChild(img);
             } else {
@@ -2056,7 +2346,7 @@ error_log("===========================");
 
         if (hasTop) {
             const img = document.createElement('img');
-            img.src = topSrc;
+            img.src = topSrc + '?v=' + ASSET_VER;
             img.className = "exercise-main-img";
             content.appendChild(img);
         } else {
@@ -2065,7 +2355,7 @@ error_log("===========================");
 
         if (hasIcon) {
             const img = document.createElement('img');
-            img.src = iconSrc;
+            img.src = iconSrc + '?v=' + ASSET_VER;
             img.className = "exercise-icon-img";
             content.appendChild(img);
         }
@@ -2079,19 +2369,18 @@ error_log("===========================");
         isSoundMixingMode  = false;
         isWordSyllableMode = true;
 
+        grid.classList.remove('vertical-layout');
+
         const title = document.getElementById('choices-title');
         const wrap  = document.getElementById('choices-wrap');
-        if (title) {
-            title.style.display = 'none';
-            title.textContent   = '';
-        }
-        if (wrap) wrap.innerHTML = '';
+        if (title) { title.style.display = 'none'; title.textContent = ''; }
+        if (wrap)  wrap.innerHTML = '';
 
         const count = getExerciseCount();
 
         if (!wordAssignments || wordAssignments.length !== count || grid.children.length !== count) {
             wordAssignments = new Array(count).fill(null);
-            grid.innerHTML = "";
+            grid.innerHTML = '';
 
             if (btnSuccess) btnSuccess.disabled = true;
 
@@ -2118,68 +2407,147 @@ error_log("===========================");
                     e.stopPropagation();
                     handleChangeCard(card);
                 });
-
                 actions.appendChild(changeBtn);
 
                 card.appendChild(content);
-                grid.appendChild(card);
                 card.appendChild(actions);
+                grid.appendChild(card);
 
                 wireExerciseCardClick(card);
             }
         }
 
         let idx = wordAssignments.findIndex(x => x === null);
-        if (idx === -1) {
-            idx = count - 1;
-        }
+        if (idx === -1) idx = count - 1;
 
         wordAssignments[idx] = word;
 
-        const topBase = `${IMG_BASE}top_${word.toLowerCase()}`;
-        const topSrc  = await firstExistingImage(topBase);
-
-        const label   = word;
-        const left    = word.slice(0, 2);
-        const right   = word.slice(2);
+        const topSrc = WORD_IMAGES[word.toLowerCase()] || await firstExistingImage(`${IMG_BASE}top_${word.toLowerCase()}`);
 
         const cards   = grid.querySelectorAll('.exercise-card');
         const card    = cards[idx];
         const content = card.querySelector('.exercise-content');
-        content.innerHTML = "";
+        content.innerHTML = '';
 
         if (topSrc) {
             const topImg = document.createElement('img');
-            topImg.src = topSrc;
-            topImg.alt = label;
+            topImg.src = topSrc + '?v=' + ASSET_VER;
+            topImg.alt = word;
             topImg.className = 'exercise-main-img';
             content.appendChild(topImg);
         } else {
             const span = document.createElement('span');
-            span.textContent = label;
+            span.textContent = word;
             content.appendChild(span);
         }
 
-        const bottomRow = document.createElement('div');
-        bottomRow.className = 'word-bottom-row';
+        const wordSpan = document.createElement('span');
+        wordSpan.textContent = word;
+        content.appendChild(wordSpan);
 
-        const leftSpan = document.createElement('span');
-        leftSpan.className = 'word-part';
-        leftSpan.textContent = left;
+        // Per-card Syllables button (only if breakdown exists)
+        const actions = card.querySelector('.exercise-card-actions');
+        if (actions) {
+            const existing = actions.querySelector('.syllable-btn');
+            if (existing) existing.remove();
 
-        const plusSpan = document.createElement('span');
-        plusSpan.className = 'word-plus';
-        plusSpan.textContent = '+';
+            if (WORD_SYLLABLE_MAP[word]) {
+                const sylBtn = document.createElement('button');
+                sylBtn.type = 'button';
+                sylBtn.className = 'change-card-btn syllable-btn';
+                sylBtn.textContent = 'Syllables';
+                sylBtn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    renderSyllableExercise(word);
+                });
+                actions.appendChild(sylBtn);
+            }
+        }
+    }
 
-        const rightSpan = document.createElement('span');
-        rightSpan.className = 'word-part';
-        rightSpan.textContent = right;
+    async function restoreWordGrid() {
+        const grid       = document.getElementById('exercise-view');
+        const btnSuccess = document.getElementById('btnSuccess');
+        if (!grid || !wordAssignments) return;
 
-        bottomRow.appendChild(leftSpan);
-        bottomRow.appendChild(plusSpan);
-        bottomRow.appendChild(rightSpan);
+        isSoundMixingMode  = false;
+        isWordSyllableMode = true;
+        isCVBlendingMode   = false;
+        cardSelectEnabled  = false;
+        selectedCardIndex  = null;
 
-        content.appendChild(bottomRow);
+        grid.classList.remove('vertical-layout');
+        grid.innerHTML = '';
+
+        const title = document.getElementById('choices-title');
+        const wrap  = document.getElementById('choices-wrap');
+        if (title) { title.style.display = 'none'; title.textContent = ''; }
+        if (wrap)  wrap.innerHTML = '';
+
+        if (btnSuccess) btnSuccess.disabled = true;
+
+        for (let i = 0; i < wordAssignments.length; i++) {
+            const word = wordAssignments[i];
+            const card = document.createElement('div');
+            card.className = 'exercise-card';
+
+            const content = document.createElement('div');
+            content.className = 'exercise-content';
+
+            if (word) {
+                const topSrc = WORD_IMAGES[word.toLowerCase()] || await firstExistingImage(`${IMG_BASE}top_${word.toLowerCase()}`);
+                if (topSrc) {
+                    const topImg = document.createElement('img');
+                    topImg.src = topSrc + '?v=' + ASSET_VER;
+                    topImg.alt = word;
+                    topImg.className = 'exercise-main-img';
+                    content.appendChild(topImg);
+                } else {
+                    const span = document.createElement('span');
+                    span.textContent = word;
+                    content.appendChild(span);
+                }
+                const wordSpan = document.createElement('span');
+                wordSpan.textContent = word;
+                content.appendChild(wordSpan);
+            } else {
+                const span = document.createElement('span');
+                span.textContent = 'Choose word';
+                span.classList.add('text-muted');
+                content.appendChild(span);
+            }
+
+            const actions = document.createElement('div');
+            actions.className = 'exercise-card-actions';
+
+            const changeBtn = document.createElement('button');
+            changeBtn.type = 'button';
+            changeBtn.className = 'change-card-btn';
+            changeBtn.textContent = 'Change Card';
+            changeBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                handleChangeCard(card);
+            });
+            actions.appendChild(changeBtn);
+
+            if (word && WORD_SYLLABLE_MAP[word]) {
+                const sylBtn = document.createElement('button');
+                sylBtn.type = 'button';
+                sylBtn.className = 'change-card-btn syllable-btn';
+                sylBtn.textContent = 'Syllables';
+                sylBtn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    renderSyllableExercise(word);
+                });
+                actions.appendChild(sylBtn);
+            }
+
+            card.appendChild(content);
+            card.appendChild(actions);
+            grid.appendChild(card);
+
+            wireExerciseCardClick(card);
+        }
     }
 
     function prettyLabel(item){
@@ -2198,8 +2566,6 @@ error_log("===========================");
     $('#btnSuccess').on('click', function () {
         if (selectedSuccessMedia) {
             playSuccessMedia();
-        } else {
-            new bootstrap.Modal('#successModal').show();
         }
     });
 
@@ -2803,18 +3169,11 @@ error_log("===========================");
                 }, 3500);
             }
         } else {
-            // No media - show default "Good Job" modal
-            const modal = new bootstrap.Modal('#successModal');
-            modal.show();
-
-            const modalEl = document.getElementById('successModal');
-            modalEl.addEventListener('hidden.bs.modal', function handler() {
-                modalEl.removeEventListener('hidden.bs.modal', handler);
-                currentAssignmentExerciseIndex++;
-                setTimeout(() => {
-                    playAssignmentExercise(currentAssignmentExerciseIndex);
-                }, 300);
-            }, { once: true });
+            // No media - advance directly to next exercise
+            currentAssignmentExerciseIndex++;
+            setTimeout(() => {
+                playAssignmentExercise(currentAssignmentExerciseIndex);
+            }, 300);
         }
     }
 
@@ -2825,12 +3184,6 @@ error_log("===========================");
 
         grid.innerHTML = `
         <div class="text-center py-5">
-            <div class="mb-4">
-                <i class="fa fa-trophy" style="font-size: 120px; color: #FFD700;"></i>
-            </div>
-            <h2 class="mb-3">🎉 Assignment Completed! 🎉</h2>
-            <h4 class="text-muted mb-4">Great job finishing "${currentAssignmentData.assignment_name}"!</h4>
-            <img src="img/success.jpg" onerror="this.style.display='none';" class="img-fluid mb-4" style="max-width: 400px;" alt="Success">
             <div>
                 <button class="btn btn-primary btn-lg" onclick="returnToAssignments()">
                     <i class="fa fa-list"></i> Back to Assignments
@@ -3021,7 +3374,7 @@ error_log("===========================");
             const consWrap = document.createElement('div');
             consWrap.className = 'd-flex flex-wrap';
             CONSONANTS.forEach(c => {
-                const src = `${IMG_BASE}consonant_${c}.png`;
+                const src = CONSONANT_IMAGES[c] || `${IMG_BASE}consonant_${c}.png`;
                 consWrap.appendChild(
                     buttonPillImage(src, c, () => {
                         addCardToModalExercise({ type: "consonant", id: c });
@@ -3038,7 +3391,7 @@ error_log("===========================");
             const vowWrap = document.createElement('div');
             vowWrap.className = 'd-flex flex-wrap';
             VOWELS.forEach(v => {
-                const src = `${IMG_BASE}vowel_${v.code}.png`;
+                const src = VOWEL_IMAGES[v.code] || `${IMG_BASE}vowel_${v.code}.png`;
                 vowWrap.appendChild(
                     buttonPillImage(src, v.label, () => {
                         addCardToModalExercise({ type: "vowel", id: v.code });
@@ -3175,7 +3528,7 @@ error_log("===========================");
 
             if (hasTop) {
                 const topImg = document.createElement('img');
-                topImg.src = topSrc;
+                topImg.src = topSrc + '?v=' + ASSET_VER;
                 topImg.alt = label;
                 topImg.className = 'exercise-main-img';
                 content.appendChild(topImg);
@@ -3187,19 +3540,18 @@ error_log("===========================");
 
             if (hasIcon) {
                 const iconImg = document.createElement('img');
-                iconImg.src = iconSrc;
+                iconImg.src = iconSrc + '?v=' + ASSET_VER;
                 iconImg.alt = label + " icon";
                 iconImg.className = 'exercise-icon-img';
                 content.appendChild(iconImg);
             }
         } else if (item.type === 'word') {
             const word = item.id;
-            const topBase = `${IMG_BASE}top_${word.toLowerCase()}`;
-            const topSrc = await firstExistingImage(topBase);
+            const topSrc = WORD_IMAGES[word.toLowerCase()] || await firstExistingImage(`${IMG_BASE}top_${word.toLowerCase()}`);
 
             if (topSrc) {
                 const topImg = document.createElement('img');
-                topImg.src = topSrc;
+                topImg.src = topSrc + '?v=' + ASSET_VER;
                 topImg.alt = word;
                 topImg.className = 'exercise-main-img';
                 content.appendChild(topImg);
@@ -3242,15 +3594,12 @@ error_log("===========================");
             }
 
             const topSrc = await firstExistingImage(topBase);
-            const consBase = `${IMG_BASE}consonant_${cons}`;
-            const vowelBase = `${IMG_BASE}vowel_${vowelCode}`;
-
-            const consSrc = await firstExistingImage(consBase);
-            const vowelSrc = await firstExistingImage(vowelBase);
+            const consSrc = CONSONANT_IMAGES[cons] || await firstExistingImage(`${IMG_BASE}consonant_${cons}`);
+            const vowelSrc = VOWEL_IMAGES[vowelCode] || await firstExistingImage(`${IMG_BASE}vowel_${vowelCode}`);
 
             if (topSrc) {
                 const topImg = document.createElement('img');
-                topImg.src = topSrc;
+                topImg.src = topSrc + '?v=' + ASSET_VER;
                 topImg.alt = label;
                 topImg.className = 'exercise-main-img';
                 content.appendChild(topImg);
@@ -3265,7 +3614,7 @@ error_log("===========================");
 
             if (consSrc) {
                 const cImg = document.createElement('img');
-                cImg.src = consSrc;
+                cImg.src = consSrc + '?v=' + ASSET_VER;
                 cImg.alt = `Consonant ${cons}`;
                 bottomRow.appendChild(cImg);
             } else {
@@ -3276,7 +3625,7 @@ error_log("===========================");
 
             if (vowelSrc) {
                 const vImg = document.createElement('img');
-                vImg.src = vowelSrc;
+                vImg.src = vowelSrc + '?v=' + ASSET_VER;
                 vImg.alt = `Vowel ${vowelCode}`;
                 bottomRow.appendChild(vImg);
             } else {
