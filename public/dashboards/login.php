@@ -26,6 +26,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         MKALogger::log('login_failure', [
                 'username_attempted' => $_POST['email'] ?? '(unknown)'
         ]);
+        if (!empty($result['trial_expired'])) {
+            setcookie('mka_user_uuid', $result['user_uuid'], time() + 3600, '/', '');
+            header('Location: /dashboards/trial-expired.php');
+            exit;
+        }
         $error = $result['message'];
     }
 }
@@ -56,6 +61,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <!-- App css -->
     <link href="css/app.min.css" rel="stylesheet" type="text/css">
     <link href="plugins/toastr/css/toastr.min.css" rel="stylesheet">
+    <!-- Mobile responsive overrides -->
+    <link href="css/mobile.css" rel="stylesheet" type="text/css">
     <script src="plugins/jquery/js/jquery.min.js"></script>
 
     <style>

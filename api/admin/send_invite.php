@@ -25,17 +25,17 @@ $patientName = trim($input['patient_name'] ?? '');
 try {
     global $pdo;
 
-    // Verify SLP exists and is enterprise_admin
-    $stmt = $pdo->prepare("SELECT Name, Email FROM mka_users WHERE UserUUID = ? AND user_type = 'enterprise_admin'");
+    // Verify sender is enterprise_admin or super_user
+    $stmt = $pdo->prepare("SELECT Name, Email, user_type FROM mka_users WHERE UserUUID = ? AND user_type IN ('enterprise_admin', 'super_user')");
     $stmt->execute([$slpUuid]);
     $slp = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$slp) {
-        throw new Exception('Invalid SLP user');
+        throw new Exception('Invalid sender account');
     }
 
-    // Check if SLP has available capacity
-    if (!SLPBilling::canAffiliate($slpUuid, $pdo)) {
+    // Capacity check applies to enterprise_admin only; super_users have no slot limits
+    if ($slp['user_type'] === 'enterprise_admin' && !SLPBilling::canAffiliate($slpUuid, $pdo)) {
         throw new Exception('No available capacity. Please purchase additional slots.');
     }
 

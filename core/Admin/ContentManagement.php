@@ -88,12 +88,15 @@ class ContentManagement {
         global $pdo;
 
         $sql = "
-            SELECT consonant_id, consonant_code as code, consonant_label as label,
-                   consonant_folder, image_filename, image_path, display_order, owner_user_uuid
-            FROM exercise_consonants
-            WHERE is_active = 1 
-              AND (owner_user_uuid IS NULL OR owner_user_uuid = ?)
-            ORDER BY display_order ASC, consonant_code ASC
+            SELECT c.consonant_id, c.consonant_code as code, c.consonant_label as label,
+                   c.image_filename, c.image_path, c.display_order, c.owner_user_uuid,
+                   COALESCE(GROUP_CONCAT(a.group_name ORDER BY a.assignment_id SEPARATOR '|||'), '') AS groups
+            FROM exercise_consonants c
+            LEFT JOIN exercise_card_group_assignments a ON a.parent_card_type = 'consonant' AND a.card_type = 'consonant' AND a.card_id = c.consonant_id
+            WHERE c.is_active = 1
+              AND (c.owner_user_uuid IS NULL OR c.owner_user_uuid = ?)
+            GROUP BY c.consonant_id
+            ORDER BY c.display_order ASC, c.consonant_code ASC
         ";
 
         if (!$isSuperUser && $limit > 0) {
@@ -117,12 +120,15 @@ class ContentManagement {
         global $pdo;
 
         $sql = "
-            SELECT vowel_id, vowel_code as code, vowel_label as label, vowel_type,
-                   vowel_folder, image_filename, image_path, display_order, owner_user_uuid
-            FROM exercise_vowels
-            WHERE is_active = 1 
-              AND (owner_user_uuid IS NULL OR owner_user_uuid = ?)
-            ORDER BY display_order ASC, vowel_code ASC
+            SELECT v.vowel_id, v.vowel_code as code, v.vowel_label as label, v.vowel_type,
+                   v.image_filename, v.image_path, v.display_order, v.owner_user_uuid,
+                   COALESCE(GROUP_CONCAT(a.group_name ORDER BY a.assignment_id SEPARATOR '|||'), '') AS groups
+            FROM exercise_vowels v
+            LEFT JOIN exercise_card_group_assignments a ON a.parent_card_type = 'vowel' AND a.card_type = 'vowel' AND a.card_id = v.vowel_id
+            WHERE v.is_active = 1
+              AND (v.owner_user_uuid IS NULL OR v.owner_user_uuid = ?)
+            GROUP BY v.vowel_id
+            ORDER BY v.display_order ASC, v.vowel_code ASC
         ";
 
         if (!$isSuperUser && $limit > 0) {
@@ -150,14 +156,16 @@ class ContentManagement {
                 cv.cv_id,
                 cv.cv_code,
                 cv.cv_type,
-                cv.cv_folder,
                 cv.icon_filename,
                 cv.icon_path,
                 cv.display_order,
-                cv.owner_user_uuid
+                cv.owner_user_uuid,
+                COALESCE(GROUP_CONCAT(a.group_name ORDER BY a.assignment_id SEPARATOR '|||'), '') AS groups
             FROM exercise_cv_blends cv
+            LEFT JOIN exercise_card_group_assignments a ON a.parent_card_type = 'cv_blend' AND a.card_type = 'cv_blend' AND a.card_id = cv.cv_id
             WHERE cv.is_active = 1
               AND (cv.owner_user_uuid IS NULL OR cv.owner_user_uuid = ?)
+            GROUP BY cv.cv_id
             ORDER BY cv.display_order ASC, cv.cv_code ASC
         ";
 
@@ -220,12 +228,17 @@ class ContentManagement {
         global $pdo;
 
         $sql = "
-            SELECT word_id, word_text, word_category, words_folder, syllable_count, syllable_breakdown,
-                   image_filename, image_path, display_order, owner_user_uuid
-            FROM exercise_words
-            WHERE is_active = 1 
-              AND (owner_user_uuid IS NULL OR owner_user_uuid = ?)
-            ORDER BY display_order ASC, word_text ASC
+            SELECT w.word_id, w.word_text, w.word_category, w.syllable_count, w.syllable_breakdown,
+                   w.image_filename, w.image_path, w.display_order, w.owner_user_uuid,
+                   COALESCE(GROUP_CONCAT(a.group_name ORDER BY a.assignment_id SEPARATOR '|||'), '') AS groups
+            FROM exercise_words w
+            LEFT JOIN exercise_card_group_assignments a ON a.card_id = w.word_id
+              AND a.card_type = IF(w.syllable_breakdown IS NOT NULL, '3cv_blend', 'word')
+              AND a.parent_card_type = IF(w.syllable_breakdown IS NOT NULL, '3cv_blend', 'word')
+            WHERE w.is_active = 1
+              AND (w.owner_user_uuid IS NULL OR w.owner_user_uuid = ?)
+            GROUP BY w.word_id
+            ORDER BY w.display_order ASC, w.word_text ASC
         ";
 
         if (!$isSuperUser && $limit > 0) {

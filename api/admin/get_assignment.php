@@ -13,6 +13,7 @@ if (!isset($_SESSION['user_data']['user_uuid'])) {
 
 $pdo = $GLOBALS['pdo'];
 $userUUID = $_SESSION['user_data']['user_uuid'];
+$userType = $_SESSION['user_data']['user_type'] ?? '';
 
 $assignmentId = $_GET['assignment_id'] ?? null;
 
@@ -23,23 +24,40 @@ if (!$assignmentId) {
 
 try {
     // Get assignment details
-    $stmt = $pdo->prepare("
-        SELECT 
-            ag.assignment_group_id,
-            ag.assignment_name,
-            ag.assignment_description,
-            ag.created_by_user_uuid,
-            ag.created_at,
-            (ag.created_by_user_uuid = ?) as is_creator
-        FROM exercise_assignment_groups ag
-        LEFT JOIN exercise_assignment_users au ON ag.assignment_group_id = au.assignment_group_id
-        WHERE ag.assignment_group_id = ?
-        AND ag.is_active = 1
-        AND (au.assigned_to_user_uuid = ? OR ag.created_by_user_uuid = ?)
-        LIMIT 1
-    ");
-
-    $stmt->execute([$userUUID, $assignmentId, $userUUID, $userUUID]);
+    // super_user sees any assignment; others must be creator or assignee
+    if ($userType === 'super_user') {
+        $stmt = $pdo->prepare("
+            SELECT
+                ag.assignment_group_id,
+                ag.assignment_name,
+                ag.assignment_description,
+                ag.created_by_user_uuid,
+                ag.created_at,
+                1 as is_creator
+            FROM exercise_assignment_groups ag
+            WHERE ag.assignment_group_id = ?
+            AND ag.is_active = 1
+            LIMIT 1
+        ");
+        $stmt->execute([$assignmentId]);
+    } else {
+        $stmt = $pdo->prepare("
+            SELECT
+                ag.assignment_group_id,
+                ag.assignment_name,
+                ag.assignment_description,
+                ag.created_by_user_uuid,
+                ag.created_at,
+                (ag.created_by_user_uuid = ?) as is_creator
+            FROM exercise_assignment_groups ag
+            LEFT JOIN exercise_assignment_users au ON ag.assignment_group_id = au.assignment_group_id
+            WHERE ag.assignment_group_id = ?
+            AND ag.is_active = 1
+            AND (au.assigned_to_user_uuid = ? OR ag.created_by_user_uuid = ?)
+            LIMIT 1
+        ");
+        $stmt->execute([$userUUID, $assignmentId, $userUUID, $userUUID]);
+    }
     $assignment = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$assignment) {

@@ -20,6 +20,10 @@ class StripeConfig {
         return getenv('STRIPE_SECRET_KEY') ?: self::SECRET_KEY;
     }
 
+    public static function getClient() {
+        return new \Stripe\StripeClient(self::getSecretKey());
+    }
+
     public static function getPublishableKey() {
         return getenv('STRIPE_PUBLISHABLE_KEY') ?: self::PUBLISHABLE_KEY;
     }

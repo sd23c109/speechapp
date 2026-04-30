@@ -22,10 +22,10 @@ class SignupHandler {
         $confirmationToken = bin2hex(random_bytes(32));
 
         $uuid = self::generateUUID();
-        $slug = 'SLUG_'.$uuid;
-        $company = 'COMPANY_'.$uuid;
+        $slug = $uuid;
+        $company = '';
         $domain = 'DOMAIN_'.$uuid;
-        $name = 'NAME_'.$uuid;
+        $name = $email;
 
         // Honeypot check
         if (!empty($_POST['website'])) {
@@ -122,6 +122,18 @@ class SignupHandler {
             VALUES (?, ?, ?, 'active')
         ");
             $insertApi->execute([$apiKey, $uuid, $trialExpires]);
+
+            // Create trial subscription row
+            $tierUuid = ($userType === 'enterprise_admin')
+                ? 'TIER-ENTERPRISE-0000-000000000004'
+                : 'TIER-LITE-0000-000000000001';
+            $subUuid = self::generateUUID();
+            $insertSub = $pdo->prepare("
+                INSERT INTO user_subscriptions
+                    (subscription_uuid, user_uuid, tier_uuid, payment_provider, status, started_at, expires_at)
+                VALUES (?, ?, ?, 'manual', 'trial', NOW(), ?)
+            ");
+            $insertSub->execute([$subUuid, $uuid, $tierUuid, $trialExpires]);
 
             MKALogger::log('account_creation_success', [
                 'user_uuid' => $uuid,

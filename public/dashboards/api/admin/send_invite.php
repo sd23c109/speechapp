@@ -8,10 +8,11 @@ if (empty($_SESSION['user_data']['user_uuid'])) {
     exit;
 }
 
-// Verify user is enterprise_admin
-if ($_SESSION['user_data']['user_type'] !== 'enterprise_admin') {
+// Verify user is enterprise_admin or super_user
+$allowedRoles = ['enterprise_admin', 'super_user'];
+if (!in_array($_SESSION['user_data']['user_type'], $allowedRoles)) {
     http_response_code(403);
-    echo json_encode(['status' => 'fail', 'message' => 'Only SLPs can send invites']);
+    echo json_encode(['status' => 'fail', 'message' => 'Permission denied']);
     exit;
 }
 

@@ -5,6 +5,7 @@ if (!defined('MKA_BASE')) {
 }
 
 require_once __DIR__ . '/config/db.php'; // local app DB
+require_once __DIR__ . '/config/stripe_secrets.php'; // Stripe keys — gitignored
 
 //require_once __DIR__ . '/config/load_secrets_mka.php'; // loads and defines HIPAA constants
 

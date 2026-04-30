@@ -142,7 +142,7 @@ class UserManagement {
                 'user_uuid' => $uuid
             ];
 
-        } catch (\PDOException $e) {
+        } catch (\Exception $e) {
             $pdo->rollBack();
             error_log("User creation error: " . $e->getMessage());
             return ['status' => 'fail', 'message' => 'Database error occurred'];
@@ -173,7 +173,13 @@ class UserManagement {
         $adminTier = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$adminTier) {
-            throw new \Exception("Parent admin has no active subscription");
+            // Creator is a super_user (no subscription row) — give patient enterprise access
+            $stmt = $pdo->prepare("SELECT tier_uuid, name FROM product_tiers WHERE name = 'enterprise' LIMIT 1");
+            $stmt->execute();
+            $adminTier = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$adminTier) {
+                throw new \Exception("No enterprise tier found — cannot create subscription");
+            }
         }
 
         // Use the admin's tier, not the requested tier
@@ -242,27 +248,63 @@ class UserManagement {
     public static function listUsersByCreator(string $creatorUuid, array $filters = []): array {
         global $pdo;
 
-        $sql = "
-            SELECT DISTINCT
-                u.UserUUID, u.Email, u.Name, u.user_type, u.Status, u.IsPaid,
-                u.email_confirmed, u.CreatedAt,
-                us.status as subscription_status
-            FROM mka_users u
-            LEFT JOIN patient_affiliations pa
-                   ON pa.patient_uuid = u.UserUUID
-                  AND pa.slp_uuid = ?
-                  AND pa.status = 'active'
-            LEFT JOIN user_subscriptions us
-                   ON us.user_uuid = u.UserUUID
-                  AND us.status IN ('trial', 'active')
-            WHERE (
-                u.parent_user_uuid = ?
-                OR pa.patient_uuid IS NOT NULL
-            )
+        // Determine the caller's role
+        $roleStmt = $pdo->prepare("SELECT user_type FROM mka_users WHERE UserUUID = ?");
+        $roleStmt->execute([$creatorUuid]);
+        $callerType = $roleStmt->fetchColumn();
+
+        $providerExpr = "
+            CASE
+                WHEN u.user_type = 'end_user' THEN
+                    COALESCE(
+                        (SELECT m.Name FROM patient_affiliations a
+                         JOIN mka_users m ON m.UserUUID = a.slp_uuid
+                         WHERE a.patient_uuid = u.UserUUID AND a.status = 'active'
+                         LIMIT 1),
+                        (SELECT Name FROM mka_users WHERE user_type = 'super_user' LIMIT 1)
+                    )
+                ELSE NULL
+            END AS provider_name
         ";
 
-        // creatorUuid passed twice: once for the pa JOIN, once for the WHERE
-        $params = [$creatorUuid, $creatorUuid];
+        if ($callerType === 'super_user') {
+            // Super users see every account except other super users
+            $sql = "
+                SELECT DISTINCT
+                    u.UserUUID, u.Email, u.Name, u.user_type, u.Status, u.IsPaid,
+                    u.email_confirmed, u.CreatedAt,
+                    us.status as subscription_status,
+                    {$providerExpr}
+                FROM mka_users u
+                LEFT JOIN user_subscriptions us
+                       ON us.user_uuid = u.UserUUID
+                      AND us.status IN ('trial', 'active')
+                WHERE u.user_type != 'super_user'
+            ";
+            $params = [];
+        } else {
+            $sql = "
+                SELECT DISTINCT
+                    u.UserUUID, u.Email, u.Name, u.user_type, u.Status, u.IsPaid,
+                    u.email_confirmed, u.CreatedAt,
+                    us.status as subscription_status,
+                    {$providerExpr}
+                FROM mka_users u
+                LEFT JOIN patient_affiliations pa
+                       ON pa.patient_uuid = u.UserUUID
+                      AND pa.slp_uuid = ?
+                      AND pa.status = 'active'
+                LEFT JOIN user_subscriptions us
+                       ON us.user_uuid = u.UserUUID
+                      AND us.status IN ('trial', 'active')
+                WHERE (
+                    u.parent_user_uuid = ?
+                    OR pa.patient_uuid IS NOT NULL
+                )
+            ";
+            // creatorUuid passed twice: once for the pa JOIN, once for the WHERE
+            $params = [$creatorUuid, $creatorUuid];
+        }
 
         if (!empty($filters['user_type'])) {
             $sql .= " AND u.user_type = ?";

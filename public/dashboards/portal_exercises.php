@@ -8,7 +8,7 @@ include('_menu_loader.php');
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MKAdvantage – Exercises (POC)</title>
+    <title>SpeechApp - Crossroads Therapy Clinic</title>
 
     <link rel="shortcut icon" href="img/favicon.ico">
     <link href="plugins/toastr/css/toastr.min.css" rel="stylesheet">
@@ -16,7 +16,7 @@ include('_menu_loader.php');
     <link href="css/bootstrap.min.css" rel="stylesheet" type="text/css">
     <link href="plugins/fontawesome/css/all.min.css" rel="stylesheet" type="text/css">
     <link href="plugins/animate/css/animate.min.css" rel="stylesheet">
-    <link href="css/style.min.css" rel="stylesheet" type="text/css">
+    <link href="css/style.min.css?v=<?= ASSET_VER ?>" rel="stylesheet" type="text/css">
 
     <script src="plugins/jquery/js/jquery.min.js"></script>
 
@@ -458,7 +458,7 @@ include('_menu_loader.php');
 <script src="plugins/wow.js/js/wow.min.js"></script>
 <script src="plugins/lucide/js/lucide.min.js"></script>
 <script src="plugins/simplebar/js/simplebar.min.js"></script>
-<script src="js/inspinia.js"></script>
+<script src="js/inspinia.js?v=<?= ASSET_VER ?>"></script>
 <script src="plugins/flot/js/jquery.flot.js"></script>
 <script src="plugins/jquery-flot-tooltip/js/jquery.flot.tooltip.min.js"></script>
 <script src="plugins/flot-spline/js/jquery.flot.spline.js"></script>

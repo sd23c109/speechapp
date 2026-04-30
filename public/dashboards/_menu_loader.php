@@ -3,24 +3,25 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-$planname='TRIAL';
 $planclass = 'text-bg-primary';
 $user_uuid = $_SESSION['user_data']['user_info']['UserUUID'];
+$userType  = $_SESSION['user_data']['user_info']['user_type'] ?? 'end_user';
 
+$roleLabel = match($userType) {
+    'super_user'       => 'Super User',
+    'enterprise_admin' => 'SLP',
+    default            => 'Patient / Parent',
+};
 
-if ($_SESSION['user_data']['user_info']['Status'] == 'y'){
-
-    $planclass = 'text-bg-warning';
-    $expiresAt = $_SESSION['user_data']['user_info']['TrialExpires'];
-    $now = new DateTime();
+if ($_SESSION['user_data']['user_info']['Status'] == 'y') {
+    $planclass  = 'text-bg-warning';
+    $expiresAt  = $_SESSION['user_data']['user_info']['TrialExpires'];
+    $now        = new DateTime();
     $expiration = new DateTime($expiresAt);
-
-    $interval = $now->diff($expiration);
-    $daysRemaining = (int)$interval->format('%r%a');
-    $planname .= ' <a href="profile.php"><span style="color:black; text-decoration:underline;"> You have '.$daysRemaining.' days left in your trial.  Upgrade Now</span></a>';
-
+    $daysRemaining = (int)$now->diff($expiration)->format('%r%a');
+    $planname = $roleLabel . ' Trial <a href="profile.php"><span style="color:black; text-decoration:underline;">— ' . $daysRemaining . ' days left. Upgrade Now</span></a>';
 } else {
-    $planname = $_SESSION['user_data']['plan_name'];
+    $planname = $roleLabel;
 }
 
 
@@ -88,10 +89,10 @@ if (!empty($_SESSION['csrf_token'])) {
             </div>
 
             <div class="dropdown profile-element">
-                <img alt="image" class="rounded-circle" src="<?=!empty($_SESSION['user_data']['avatar']) ? $_SESSION['user_data']['avatar'] : 'img/favicon.ico'?>" height="48" />
+                <img alt="image" class="rounded-circle" src="<?=!empty($_SESSION['user_data']['avatar']) ? $_SESSION['user_data']['avatar'] : 'img/favicon.ico'?>" width="48" height="48" style="object-fit:cover;" />
 
                 <a data-bs-toggle="dropdown" class="dropdown-toggle" href="#">
-                    <span class="d-block mt-1 fw-semibold fs-14 ff-secondary"><?=$_SESSION['user_data']['company_name']?></span>
+                    <span class="d-block mt-1 fw-semibold fs-14 ff-secondary"><?= htmlspecialchars($_SESSION['user_data']['user_info']['Name'] ?? $_SESSION['user_data']['user_info']['Email'] ?? '') ?></span>
                     <span class="text-muted text-xs d-block ff-secondary">Account <b class="caret"></b></span>
                 </a>
 
@@ -129,8 +130,17 @@ $menu = ob_get_clean();
 
 ob_start();
 ?>
+<!-- Mobile responsive CSS + table JS (injected into every interior page) -->
+<link href="/dashboards/css/mobile.css?v=<?= ASSET_VER ?>" rel="stylesheet" type="text/css">
+
 <div class="row border-bottom">
     <nav class="navbar navbar-top" role="navigation">
+
+        <!-- Hamburger: visible on tablets/phones, hidden on desktop (lg+) -->
+        <button class="navbar-minimalize" type="button" title="Toggle menu">
+            <i class="fa fa-bars"></i>
+        </button>
+
         <div class="navbar-header">
             <div class="d-none d-md-flex" style="padding: 20px;">
                 Plan:&nbsp;&nbsp;<span class="badge <?=$planclass?>" style="font-size:16px;"><?=$planname?></span>
@@ -142,7 +152,6 @@ ob_start();
                 <span class="me-2 text-muted welcome-message">Welcome.</span>
             </li>
 
-
             <li>
                 <a href="logout.php" class="navbar-top-item">
                     <i class="fa fa-sign-out"></i>
@@ -153,6 +162,9 @@ ob_start();
         </ul>
     </nav>
 </div>
+
+<!-- mobile-tables.js: loaded after Bootstrap, before page-specific scripts -->
+<script src="/dashboards/js/mobile-tables.js"></script>
 <?php
 $topbar = ob_get_clean();
 

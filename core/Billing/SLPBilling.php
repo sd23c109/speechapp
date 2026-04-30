@@ -5,6 +5,7 @@ class SLPBilling {
 
     const BASE_COST = 100.00;
     const BASE_CAPACITY = 10;
+    const TRIAL_CAPACITY = 2;
     const CREDIT_PER_PATIENT = 10.00;
 
     const PACK_PRICING = [
@@ -91,20 +92,37 @@ class SLPBilling {
     }
 
     /**
-     * Check if SLP can affiliate more patients
+     * Check if SLP is on a trial subscription
+     */
+    public static function isOnTrial($slpUuid, $pdo) {
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) FROM user_subscriptions
+            WHERE user_uuid = ? AND status = 'trial'
+        ");
+        $stmt->execute([$slpUuid]);
+        return (int)$stmt->fetchColumn() > 0;
+    }
+
+    /**
+     * Check if SLP can affiliate more patients.
+     * Trial SLPs are capped at TRIAL_CAPACITY (2) patients.
      */
     public static function canAffiliate($slpUuid, $pdo) {
-        $capacity = self::getTotalCapacity($slpUuid, $pdo);
+        $capacity = self::isOnTrial($slpUuid, $pdo)
+            ? self::TRIAL_CAPACITY
+            : self::getTotalCapacity($slpUuid, $pdo);
         $current = self::getAffiliatedPatientCount($slpUuid, $pdo);
 
         return $current < $capacity;
     }
 
     /**
-     * Get available slots
+     * Get available slots (trial-aware)
      */
     public static function getAvailableSlots($slpUuid, $pdo) {
-        $capacity = self::getTotalCapacity($slpUuid, $pdo);
+        $capacity = self::isOnTrial($slpUuid, $pdo)
+            ? self::TRIAL_CAPACITY
+            : self::getTotalCapacity($slpUuid, $pdo);
         $current = self::getAffiliatedPatientCount($slpUuid, $pdo);
 
         return max(0, $capacity - $current);

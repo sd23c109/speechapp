@@ -65,13 +65,28 @@ error_log("User type: " . ($userType ?? 'UNKNOWN'));
 error_log("successMedia result: " . print_r($successMedia, true));
 error_log("===========================");
 
+// Load video tutorial slot assignments
+$videoSlotMap = [];
+try {
+    $vstmt = $pdo->query("
+        SELECT slot_key, title, video_path, source_type
+        FROM instruction_videos
+        WHERE is_active = 1 AND slot_key IS NOT NULL
+    ");
+    foreach ($vstmt->fetchAll(PDO::FETCH_ASSOC) as $vrow) {
+        $videoSlotMap[$vrow['slot_key']] = $vrow;
+    }
+} catch (Exception $e) {
+    error_log('video slot map error: ' . $e->getMessage());
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MKAdvantage – Exercises (POC)</title>
+    <title>SpeechApp - Crossroads Therapy Clinic</title>
 
     <link rel="shortcut icon"href="/dashboards/img/favicon.ico">
     <link href="plugins/toastr/css/toastr.min.css" rel="stylesheet">
@@ -79,7 +94,7 @@ error_log("===========================");
     <link href="css/bootstrap.min.css" rel="stylesheet" type="text/css">
     <link href="plugins/fontawesome/css/all.min.css" rel="stylesheet" type="text/css">
     <link href="plugins/animate/css/animate.min.css" rel="stylesheet">
-    <link href="css/style.min.css" rel="stylesheet" type="text/css">
+    <link href="css/style.min.css?v=<?= ASSET_VER ?>" rel="stylesheet" type="text/css">
 
 
     <link href="plugins/datatables/css/dataTables.bootstrap5.min.css" rel="stylesheet">
@@ -93,6 +108,8 @@ error_log("===========================");
     <style>
         /* --- Exercise UI (minimal, theme-friendly) --- */
         .category-btn { padding: 10px 14px; font-weight: 600; }
+        #exercise-panel-title { transition: color .2s, font-size .2s; }
+        #exercise-panel-title.panel-active { font-size: 1.35rem; color: #198754; font-weight: 700; }
         .slide-panel {
             max-height: 70vh;
             overflow-y: auto;
@@ -172,15 +189,16 @@ error_log("===========================");
         #exercise-view {
             display: flex;
             flex-wrap: wrap;
-            gap: 12px;
+            gap: 20px;
             justify-content: center;
             align-items: flex-start;
         }
 
         /* One flex item per card (content box + button) */
         .exercise-card {
-            flex: 0 0 calc(16.66% - 12px);   /* 6 across desktop */
-            max-width: calc(16.66% - 12px);
+            flex: 1 1 0;
+            max-width: none;
+            min-width: 0;
             display: flex;
             flex-direction: column;          /* box on top, button under */
             align-items: stretch;
@@ -232,6 +250,12 @@ error_log("===========================");
         .syllable-btn:hover {
             background-color: #0069d9;
         }
+        .blend-btn {
+            background-color: #007bff;
+        }
+        .blend-btn:hover {
+            background-color: #0069d9;
+        }
 
         /* Top image */
         .exercise-main-img {
@@ -281,21 +305,7 @@ error_log("===========================");
             opacity: 0.7;
         }
 
-        /* Responsive: 3 per row on tablets */
-        @media (max-width: 991.98px) {
-            .exercise-card {
-                flex: 0 0 calc(33.33% - 12px);
-                max-width: calc(33.33% - 12px);
-            }
-        }
-
-        /* Responsive: 2 per row on phones */
-        @media (max-width: 575.98px) {
-            .exercise-card {
-                flex: 0 0 calc(50% - 12px);
-                max-width: calc(50% - 12px);
-            }
-        }
+        /* Cards always share the row equally — no responsive overrides needed */
 
         /* Force every card’s bordered box to be the same height */
         .exercise-box{
@@ -364,8 +374,51 @@ error_log("===========================");
 
         #exercise-view.vertical-layout .exercise-card {
             flex: 0 0 auto;
-            max-width: 300px; /* adjust as needed */
+            max-width: 675px;
             width: 100%;
+        }
+
+        /* === VERTICAL layout: 2.25× sizing === */
+        #exercise-view.vertical-layout .exercise-box {
+            height: 495px;
+            min-height: 495px;
+        }
+        #exercise-view.vertical-layout .exercise-main-img {
+            max-height: 315px;
+        }
+        #exercise-view.vertical-layout .exercise-icon-img {
+            max-height: 135px;
+        }
+        #exercise-view.vertical-layout .cv-parts-text {
+            font-size: 76px;
+        }
+        #exercise-view.vertical-layout .cv-whole-text {
+            font-size: 76px;
+        }
+        #exercise-view.vertical-layout .cv-bottom-row img {
+            max-height: 135px;
+        }
+
+        /* === HORIZONTAL layout: cards stretch equally, images fill card width === */
+        #exercise-view:not(.vertical-layout) .exercise-card {
+            flex: 1 1 0;
+            max-width: none;
+            min-width: 0;
+        }
+        #exercise-view:not(.vertical-layout) .exercise-box {
+            height: auto;
+            min-height: 0;
+            overflow: visible;
+        }
+        #exercise-view:not(.vertical-layout) .exercise-main-img {
+            max-height: none;
+            width: 100%;
+            height: auto;
+        }
+        #exercise-view:not(.vertical-layout) .exercise-icon-img {
+            max-height: none;
+            width: 100%;
+            height: auto;
         }
 
         .btn-purple {
@@ -514,7 +567,7 @@ error_log("===========================");
                 <div class="col-lg-12">
                     <div class="ibox">
                         <div class="ibox-title">
-                            <h5>Exercises Vowels, Consonants, Syllables</h5>
+                            <h5 id="exercise-panel-title">Exercises Vowels, Consonants, Syllables</h5>
                         </div>
                         <div class="ibox-content">
 
@@ -604,7 +657,7 @@ error_log("===========================");
                             </div>
 
                             <!-- Video button ABOVE main panel (full width) -->
-                            <div class="mt-3">
+                            <div class="mt-3" style="display:none;">
                                 <button class="btn btn-outline-primary w-100" id="btnVideo">
                                     <i class="fa fa-play-circle me-1"></i> Video Example
                                 </button>
@@ -670,15 +723,7 @@ error_log("===========================");
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div class="ratio ratio-16x9 border rounded">
-                    <iframe id="videoPlayer"
-                            src="https://www.youtube.com/embed/69DwHUg2f7s"
-                            title="Vowel Sounds"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowfullscreen>
-                    </iframe>
-                </div>
-
+                <div id="videoPlayerWrap" class="ratio ratio-16x9 border rounded"></div>
             </div>
         </div>
     </div>
@@ -689,7 +734,8 @@ error_log("===========================");
         <div class="modal-content text-center p-4">
             <h4 class="mb-2">Nice job!</h4>
             <img src="img/success.jpg" onerror="this.style.display='none';" class="img-fluid mb-2" alt="Success">
-            <p class="text-muted mb-0">You completed this exercise.</p>
+            <p class="text-muted mb-3">You completed this exercise.</p>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
         </div>
     </div>
 </div>
@@ -855,7 +901,7 @@ error_log("===========================");
 <script src="plugins/wow.js/js/wow.min.js"></script>
 <script src="plugins/lucide/js/lucide.min.js"></script>
 <script src="plugins/simplebar/js/simplebar.min.js"></script>
-<script src="js/inspinia.js"></script>
+<script src="js/inspinia.js?v=<?= ASSET_VER ?>"></script>
 <script src="plugins/flot/js/jquery.flot.js"></script>
 <script src="plugins/jquery-flot-tooltip/js/jquery.flot.tooltip.min.js"></script>
 <script src="plugins/flot-spline/js/jquery.flot.spline.js"></script>
@@ -1017,6 +1063,8 @@ error_log("===========================");
     let isSoundMixingMode = false;
     let isWordSyllableMode = false;
     let isCVBlendingMode = false;
+    let cvBlendingSource = null; // 'soundmixing' when entered from Syllable Shifts
+    let savedSoundMixAssignments = null; // snapshot saved before navigating to CV Blending
 
     let CONSONANTS = [];
     let VOWELS = [];
@@ -1032,6 +1080,7 @@ error_log("===========================");
     let CV_FOLDER_MAP = {};
     let WORD_FOLDER_MAP = {};
     let WORD_SYLLABLE_MAP = {};
+    let SECTION_GROUPS = {};  // parent_type → [{name, cards:[]}]
 
     // SUCCESS MEDIA VARIABLES - DECLARE FIRST
     let currentMedia = [];
@@ -1052,6 +1101,14 @@ error_log("===========================");
         const mediaModal = document.createElement('div');
         mediaModal.className = 'modal fade';
 
+        const closeBtn = `<div class="text-center mt-2">
+            <button type="button" data-bs-dismiss="modal"
+                style="background:rgba(0,0,0,0.6); color:#fff; border:none;
+                       border-radius:20px; padding:6px 22px; font-size:1rem;
+                       cursor:pointer;"
+                aria-label="Close">Close</button>
+        </div>`;
+
         if (isVideo) {
             mediaModal.innerHTML = `
                 <div class="modal-dialog modal-dialog-centered">
@@ -1061,12 +1118,12 @@ error_log("===========================");
                                 ${selectedSuccessMedia.autoplay_loop ? 'loop' : ''}
                                 ${selectedSuccessMedia.allow_sound ? '' : 'muted'}
                                 autoplay
-                                style="width: 100%; border-radius: 8px;"
-                                onended="this.closest('.modal').querySelector('.btn-close').click()"
+                                style="width: 100%; border-radius: 8px; display:block;"
+                                onended="this.closest('.modal').querySelector('[data-bs-dismiss]').click()"
                             >
                                 <source src="${selectedSuccessMedia.media_path}" type="video/mp4">
                             </video>
-                            <button type="button" class="btn-close btn-close-white position-absolute top-0 end-0 m-2" data-bs-dismiss="modal"></button>
+                            ${closeBtn}
                         </div>
                     </div>
                 </div>
@@ -1077,9 +1134,9 @@ error_log("===========================");
                     <div class="modal-content bg-transparent border-0">
                         <div class="modal-body p-0 text-center">
                             <img src="${selectedSuccessMedia.media_path}"
-                                 style="max-width: 100%; max-height: 80vh; border-radius: 8px;"
+                                 style="max-width: 100%; max-height: 75vh; border-radius: 8px; display:block; margin:0 auto;"
                                  alt="${selectedSuccessMedia.media_name}">
-                            <button type="button" class="btn-close btn-close-white position-absolute top-0 end-0 m-2" data-bs-dismiss="modal"></button>
+                            ${closeBtn}
                         </div>
                     </div>
                 </div>
@@ -1098,6 +1155,7 @@ error_log("===========================");
 
         mediaModal.addEventListener('hidden.bs.modal', function() {
             mediaModal.remove();
+            resetCardsAfterSuccess();
         });
     }
 
@@ -1111,7 +1169,7 @@ error_log("===========================");
                 CONSONANTS = consData.data.map(c => c.code);
                 consData.data.forEach(c => {
                     if (c.image_path) CONSONANT_IMAGES[c.code] = c.image_path;
-                    CONSONANT_FOLDER_MAP[c.code] = c.consonant_folder || null;
+                    CONSONANT_FOLDER_MAP[c.code] = c.groups ? c.groups.split('|||').filter(Boolean) : null;
                 });
             }
 
@@ -1124,7 +1182,7 @@ error_log("===========================");
                 }));
                 vowData.data.forEach(v => {
                     if (v.image_path) VOWEL_IMAGES[v.code] = v.image_path;
-                    VOWEL_FOLDER_MAP[v.code] = v.vowel_folder || null;
+                    VOWEL_FOLDER_MAP[v.code] = v.groups ? v.groups.split('|||').filter(Boolean) : null;
                 });
             }
 
@@ -1134,7 +1192,7 @@ error_log("===========================");
                 WORDS = wordData.data.map(w => w.word_text);
                 wordData.data.forEach(w => {
                     if (w.image_path) WORD_IMAGES[w.word_text.toLowerCase()] = w.image_path;
-                    WORD_FOLDER_MAP[w.word_text] = w.words_folder || null;
+                    WORD_FOLDER_MAP[w.word_text] = w.groups ? w.groups.split('|||').filter(Boolean) : null;
                     if (w.syllable_breakdown) WORD_SYLLABLE_MAP[w.word_text] = w.syllable_breakdown;
                 });
             }
@@ -1143,11 +1201,10 @@ error_log("===========================");
             const cvData = await cvResp.json();
             if (cvData.status === 'success') {
                 CV_BLEND_ITEMS = cvData.data.map(cv => {
-                    const parts = cv.cv_code.split('-');
-                    const c = parts[0];
-                    const v = parts.slice(1).join('-');
-                    if (cv.icon_path) CV_IMAGES[cv.cv_code] = cv.icon_path;
-                    CV_FOLDER_MAP[cv.cv_code] = cv.cv_folder || null;
+                    const [c, v] = parseCVCode(cv.cv_code);
+                    const key = `${c}-${v}`;
+                    if (cv.icon_path) CV_IMAGES[key] = cv.icon_path;
+                    CV_FOLDER_MAP[key] = cv.groups ? cv.groups.split('|||').filter(Boolean) : null;
                     return { c, v };
                 });
             }
@@ -1161,6 +1218,15 @@ error_log("===========================");
                 }));
             }
 
+            // Load cross-type group data for all sections
+            await Promise.allSettled(
+                ['consonant','vowel','cv_blend','cv','cv_blending','syllable_shifts','3cv_blend','word'].map(pt =>
+                    fetch(`/dashboards/api/admin/get_section_groups.php?parent_type=${pt}`)
+                        .then(r => r.json())
+                        .then(d => { if (d.status === 'success') SECTION_GROUPS[pt] = d.groups; })
+                )
+            );
+
             buildLists();
             initExerciseGrid();
 
@@ -1171,15 +1237,54 @@ error_log("===========================");
 
     let SEQUENCE = [];
     const IMG_BASE = "/assets/portal/exercises/images/";
-    const ASSET_VER = "<?= filemtime('/opt/mka/public/assets/portal/exercises/images/generated_images_consonants') ?>";
+    const ASSET_VER = "<?= max(
+        filemtime('/opt/mka/public/assets/portal/exercises/images/generated_images_consonants'),
+        filemtime('/opt/mka/public/assets/portal/exercises/images/generated_images_cv'),
+        filemtime('/opt/mka/public/assets/portal/exercises/images/generated_images_vowels')
+    ) ?>";
 
-    function getWhole(item) {
-        return item.c + ' + ' + item.v;
+    // Maps cons_vowelCode → filename stem in generated_images_cv/00_*.png
+    // Keys match the DB cv_code format: CONS-VOWEL with - replaced by _
+    const CV_SOUND_MAP = {
+        'B_AH':'Bah','B_EE':'Bee','B_EH':'Beh','B_IH':'Bih','B_O':'Bo','B_OO':'Boo','B_UH':'Buh',
+        'CH_A':'Cha','CH_EE':'Chee','CH_OH':'Choh','CH_OO':'Choo',
+        'D_A':'Da','D_EE':'Dee','D_EH':'Deh','D_IH':'Dih','D_OH':'Doh','D_OO':'Doo','D_UH':'Duh',
+        'F_A':'Fa','F_EE':'Fee','F_O':'Fo','F_OO':'Foo',
+        'G_A':'Ga','G_EE':'Gee','G_EH':'Geh','G_IH':'Gih','G_O':'Go','G_OO':'Goo','G_UH':'Guh',
+        'H_A':'Ha','H_EE':'Hee','H_EH':'Heh','H_IH':'Hih','H_OH':'Hoh','H_OO':'Hoo','H_UH':'Huh',
+        'J_A':'Ja','J_EE':'Jee','J_OH':'Joh','J_OO':'Joo',
+        'K_A':'Ka','K_EE':'Kee','K_EH':'Keh','K_IH':'Kih','K_OH':'Koh','K_OO':'Koo','K_UH':'Kuh',
+        'L_A':'La','L_EE':'Lee','L_OH':'Loh','L_OO':'Loo',
+        'M_A':'Ma','M_E':'Me','M_EH':'Meh','M_IH':'Mih','M_OH':'Moh','M_OO':'Moo','M_UH':'Muh',
+        'N_A':'Na','N_EE':'Nee','N_EH':'Neh','N_IH':'Nih','N_O':'No','N_OO':'Noo','N_UH':'Nuh',
+        'P_A':'Pa','P_EA':'Pea','P_EH':'Peh','P_IH':'Pih','P_OH':'Poh','P_OO':'Poo','P_UH':'Puh',
+        'R_A':'Ra','R_EE':'Ree','R_OH':'Roh','R_OO':'Roo',
+        'S_A':'Sa','S_EE':'See','S_OH':'Soh','S_OO':'Soo',
+        'SH_A':'Sha','SH_EE':'Shee','SH_OH':'Shoh','SH_OO':'Shoo',
+        'T_A':'Ta','T_EE':'Tee','T_EH':'Teh','T_IH':'Tih','T_OE':'Toe','T_WO':'Two','T_UH':'Tuh',
+        'TH_A':'Tha','TH_EE':'Thee','TH_OH':'Thoh','TH_OO':'Thoo',
+        'V_A':'Va','V_EE':'Vee','V_OH':'Voh','V_OO':'Voo',
+        'W_A':'Wa','W_E':'We','W_EH':'Weh','W_IH':'Wih','W_OH':'Woh','W_OO':'Woo','W_UH':'Wuh',
+        'Y_A':'Ya','Y_EE':'Yee','Y_EH':'Yeh','Y_IH':'Yih','Y_OH':'Yoh','Y_OO':'Yoo','Y_UH':'Yuh',
+        'Z_A':'Za','Z_EE':'Zee','Z_OH':'Zoh','Z_OO':'Zoo',
+    };
+
+    // Splits a cv_code into [consonant, vowel].
+    // Codes with a dash (W-OH, SH-OH, TH-OO) split at the dash.
+    // CH/SH/TH prefixes are 2-char consonants; everything else is 1-char.
+    function parseCVCode(code) {
+        if (code.includes('-')) {
+            const idx = code.indexOf('-');
+            return [code.slice(0, idx), code.slice(idx + 1)];
+        }
+        const two = code.slice(0, 2);
+        if (['CH', 'SH', 'TH'].includes(two)) return [two, code.slice(2)];
+        return [code[0], code.slice(1)];
     }
 
-    function getPartsText(item) {
-        return `${item.c} + ${item.v}`;
-    }
+    function cv3Label(item) { return `${item.c} + ${item.v}`; }
+    function getWhole(item) { return cv3Label(item); }
+    function getPartsText(item) { return cv3Label(item); }
 
     function videoFor(item){ return ""; }
 
@@ -1310,27 +1415,38 @@ error_log("===========================");
     function buildLists() {
         const basePath = "/assets/portal/exercises/images/"
 
-        function buildAccordion(parent, label, items, buildPill) {
-            const group = document.createElement('div');
-            group.style.cssText = 'width:100%; margin-bottom:4px;';
+        function buildTabs(parent, folderNames, folderMap, buildPill) {
+            const nav = document.createElement('div');
+            nav.style.cssText = 'display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px;';
 
-            const btn = document.createElement('button');
-            btn.style.cssText = 'width:100%; background:#28a745; color:#fff; border:none; border-radius:4px; padding:8px 14px; text-align:left; font-weight:600; font-size:1rem; cursor:pointer; display:flex; align-items:center; gap:8px;';
-            btn.innerHTML = `<i class="fa fa-folder"></i> ${label}`;
+            const pillArea = document.createElement('div');
+            pillArea.style.cssText = 'display:flex; flex-wrap:wrap; padding:4px 0; width:100%;';
 
-            const content = document.createElement('div');
-            content.style.cssText = 'display:none; flex-wrap:wrap; padding:6px 0;';
+            const tabBtns = [];
 
-            items.forEach(item => content.appendChild(buildPill(item)));
+            function activate(idx) {
+                tabBtns.forEach((b, j) => {
+                    b.style.background  = j === idx ? '#28a745' : '#fff';
+                    b.style.color       = j === idx ? '#fff'    : '#28a745';
+                    b.style.borderColor = '#28a745';
+                });
+                pillArea.innerHTML = '';
+                folderMap[folderNames[idx]].forEach(item => pillArea.appendChild(buildPill(item)));
+            }
 
-            btn.addEventListener('click', () => {
-                content.style.display = content.style.display === 'none' ? 'flex' : 'none';
-                btn.querySelector('i').className = content.style.display === 'none' ? 'fa fa-folder' : 'fa fa-folder-open';
+            folderNames.forEach((folder, i) => {
+                const tab = document.createElement('button');
+                tab.style.cssText = 'border:1px solid #28a745; border-radius:4px; padding:2px 10px; font-size:0.78rem; font-weight:600; cursor:pointer;';
+                tab.textContent = folder;
+                tab.addEventListener('click', () => activate(i));
+                nav.appendChild(tab);
+                tabBtns.push(tab);
             });
 
-            group.appendChild(btn);
-            group.appendChild(content);
-            parent.appendChild(group);
+            if (folderNames.length > 0) activate(0);
+
+            parent.appendChild(nav);
+            parent.appendChild(pillArea);
         }
 
         const $letters = document.getElementById('lettersounds-list')
@@ -1352,148 +1468,338 @@ error_log("===========================");
             ...CONSONANTS.map(c => ({type:"consonant", id:c}))
         ];
 
-        if ($letters) {
-            // Group consonants by folder
-            const consFolders = {};
-            CONSONANTS.forEach(c => {
-                const folder = CONSONANT_FOLDER_MAP[c] || 'Other';
-                if (!consFolders[folder]) consFolders[folder] = [];
-                consFolders[folder].push(c);
-            });
-            const consFolderNames = Object.keys(consFolders).filter(f => f !== 'Other').sort();
-            if (consFolders['Other']) consFolderNames.push('Other');
+        // Build the right pill for any cross-type card
+        function buildPillForCard(card) {
+            if (card.source_type === 'consonant' && card.consonant_code) {
+                const src = CONSONANT_IMAGES[card.consonant_code] || `${basePath}consonant_${card.consonant_code}.png`;
+                const pill = buttonPillImage(src, card.consonant_code, () => handleItemSelection({ type: 'consonant', id: card.consonant_code }));
+                handlePillPress({ type: 'consonant', id: card.consonant_code }, pill);
+                return pill;
+            }
+            if (card.source_type === 'vowel' && card.vowel_code) {
+                const src = VOWEL_IMAGES[card.vowel_code] || `${basePath}vowel_${card.vowel_code}.png`;
+                const pill = buttonPillImage(src, card.vowel_code, () => handleItemSelection({ type: 'vowel', id: card.vowel_code }));
+                handlePillPress({ type: 'vowel', id: card.vowel_code }, pill);
+                return pill;
+            }
+            if (card.source_type === 'cv_blend' && card.cv_code) {
+                const [c, v] = parseCVCode(card.cv_code);
+                return buttonPill(`${c}${v}`, () => renderBlendingExercise(c, v, 'cv'));
+            }
+            if (card.source_type === '3cv_blend' && card.syllable_breakdown) {
+                const label = card.syllable_breakdown.split('-').join(' + ');
+                return buttonPill(label, () => renderSyllableExercise(card.word_text));
+            }
+            if (card.source_type === 'word' && card.word_text) {
+                const pill = buttonPill(card.word_text, () => selectWordExercise(card.word_text));
+                handlePillPress({ type: 'word', id: card.word_text }, pill);
+                return pill;
+            }
+            return buttonPill(card.sound_text || '?', () => {});
+        }
 
+        if ($letters) {
             addListHeader($letters, 'Consonants');
-            consFolderNames.forEach(folder => {
-                buildAccordion($letters, folder, consFolders[folder], c => {
+            const consSectionGroups = SECTION_GROUPS['consonant'] || [];
+            if (consSectionGroups.length > 0) {
+                const consFolders = {};
+                consSectionGroups.forEach(g => { consFolders[g.name] = g.cards; });
+                const consFolderNames = consSectionGroups.map(g => g.name);
+                const groupedConsCodes = new Set();
+                consSectionGroups.forEach(g => g.cards.forEach(c => {
+                    if (c.source_type === 'consonant' && c.consonant_code) groupedConsCodes.add(c.consonant_code);
+                }));
+                const ungroupedCons = CONSONANTS.filter(c => !groupedConsCodes.has(c));
+                if (ungroupedCons.length > 0) {
+                    consFolders['Other'] = ungroupedCons.map(c => ({ source_type: 'consonant', consonant_code: c, sound_text: c }));
+                    consFolderNames.push('Other');
+                }
+                buildTabs($letters, consFolderNames, consFolders, card => buildPillForCard(card));
+            } else {
+                const consFolders = {};
+                CONSONANTS.forEach(c => {
+                    const grps = CONSONANT_FOLDER_MAP[c];
+                    const list = (grps && grps.length) ? grps : ['Other'];
+                    list.forEach(folder => {
+                        if (!consFolders[folder]) consFolders[folder] = [];
+                        consFolders[folder].push(c);
+                    });
+                });
+                const consFolderNames = Object.keys(consFolders).filter(f => f !== 'Other').sort();
+                if (consFolders['Other']) consFolderNames.push('Other');
+                buildTabs($letters, consFolderNames, consFolders, c => {
                     const src = CONSONANT_IMAGES[c] || `${basePath}consonant_${c}.png`;
                     const pill = buttonPillImage(src, c, () => handleItemSelection({ type: "consonant", id: c }));
                     handlePillPress({ type: "consonant", id: c }, pill);
                     return pill;
                 });
-            });
-
-            // Group vowels by folder
-            const vowFolders = {};
-            VOWELS.forEach(v => {
-                const folder = VOWEL_FOLDER_MAP[v.code] || 'Other';
-                if (!vowFolders[folder]) vowFolders[folder] = [];
-                vowFolders[folder].push(v);
-            });
-            const vowFolderNames = Object.keys(vowFolders).filter(f => f !== 'Other').sort();
-            if (vowFolders['Other']) vowFolderNames.push('Other');
+            }
 
             addListHeader($letters, 'Vowels');
-            vowFolderNames.forEach(folder => {
-                buildAccordion($letters, folder, vowFolders[folder], v => {
+            const vowSectionGroups = SECTION_GROUPS['vowel'] || [];
+            if (vowSectionGroups.length > 0) {
+                const vowFolders = {};
+                vowSectionGroups.forEach(g => { vowFolders[g.name] = g.cards; });
+                const vowFolderNames = vowSectionGroups.map(g => g.name);
+                const groupedVowCodes = new Set();
+                vowSectionGroups.forEach(g => g.cards.forEach(c => {
+                    if (c.source_type === 'vowel' && c.vowel_code) groupedVowCodes.add(c.vowel_code);
+                }));
+                const ungroupedVow = VOWELS.filter(v => !groupedVowCodes.has(v.code));
+                if (ungroupedVow.length > 0) {
+                    vowFolders['Other'] = ungroupedVow.map(v => ({ source_type: 'vowel', vowel_code: v.code, sound_text: v.label }));
+                    vowFolderNames.push('Other');
+                }
+                buildTabs($letters, vowFolderNames, vowFolders, card => buildPillForCard(card));
+            } else {
+                const vowFolders = {};
+                VOWELS.forEach(v => {
+                    const grps = VOWEL_FOLDER_MAP[v.code];
+                    const list = (grps && grps.length) ? grps : ['Other'];
+                    list.forEach(folder => {
+                        if (!vowFolders[folder]) vowFolders[folder] = [];
+                        vowFolders[folder].push(v);
+                    });
+                });
+                const vowFolderNames = Object.keys(vowFolders).filter(f => f !== 'Other').sort();
+                if (vowFolders['Other']) vowFolderNames.push('Other');
+                buildTabs($letters, vowFolderNames, vowFolders, v => {
                     const src = VOWEL_IMAGES[v.code] || `${basePath}vowel_${v.code}.png`;
                     const pill = buttonPillImage(src, v.label, () => handleItemSelection({ type: "vowel", id: v.code }));
                     handlePillPress({ type: "vowel", id: v.code }, pill);
                     return pill;
                 });
-            });
+            }
         }
 
         if ($cv) {
-            const cvFolders = {};
-            CV_BLEND_ITEMS.forEach(item => {
-                const key = `${item.c}-${item.v}`;
-                const folder = CV_FOLDER_MAP[key] || 'Other';
-                if (!cvFolders[folder]) cvFolders[folder] = [];
-                cvFolders[folder].push(item);
-            });
-            const cvFolderNames = Object.keys(cvFolders).filter(f => f !== 'Other').sort();
-            if (cvFolders['Other']) cvFolderNames.push('Other');
-
-            cvFolderNames.forEach(folder => {
-                buildAccordion($cv, folder, cvFolders[folder], item => {
+            const cvSectionGroups = SECTION_GROUPS['cv'] || SECTION_GROUPS['cv_blend'] || [];
+            if (cvSectionGroups.length > 0) {
+                const cvFolders = {};
+                cvSectionGroups.forEach(g => { cvFolders[g.name] = g.cards; });
+                const cvFolderNames = cvSectionGroups.map(g => g.name);
+                const groupedCvKeys = new Set();
+                cvSectionGroups.forEach(g => g.cards.forEach(c => {
+                    if (c.source_type === 'cv_blend' && c.cv_code) {
+                        const [cons, vowel] = parseCVCode(c.cv_code);
+                        groupedCvKeys.add(`${cons}-${vowel}`);
+                    }
+                }));
+                const ungroupedCv = CV_BLEND_ITEMS.filter(item => !groupedCvKeys.has(`${item.c}-${item.v}`));
+                if (ungroupedCv.length > 0) {
+                    cvFolders['Other'] = ungroupedCv.map(item => ({ source_type: 'cv_blend', cv_code: `${item.c}-${item.v}`, sound_text: `${item.c}${item.v}` }));
+                    cvFolderNames.push('Other');
+                }
+                buildTabs($cv, cvFolderNames, cvFolders, card => buildPillForCard(card));
+            } else {
+                const cvFolders = {};
+                CV_BLEND_ITEMS.forEach(item => {
+                    const key = `${item.c}-${item.v}`;
+                    const grps = CV_FOLDER_MAP[key];
+                    const list = (grps && grps.length) ? grps : ['Other'];
+                    list.forEach(folder => {
+                        if (!cvFolders[folder]) cvFolders[folder] = [];
+                        cvFolders[folder].push(item);
+                    });
+                });
+                const cvFolderNames = Object.keys(cvFolders).filter(f => f !== 'Other').sort();
+                if (cvFolders['Other']) cvFolderNames.push('Other');
+                buildTabs($cv, cvFolderNames, cvFolders, item => {
                     return buttonPill(`${item.c}${item.v}`, () => renderBlendingExercise(item.c, item.v, 'cv'));
                 });
-            });
+            }
         }
 
         if ($3cv) {
-            const blend3Folders = {};
-            CV_BLEND_ITEMS.forEach(item => {
-                const key = `${item.c}-${item.v}`;
-                const folder = CV_FOLDER_MAP[key] || 'Other';
-                if (!blend3Folders[folder]) blend3Folders[folder] = [];
-                blend3Folders[folder].push(item);
-            });
-            const blend3FolderNames = Object.keys(blend3Folders).filter(f => f !== 'Other').sort();
-            if (blend3Folders['Other']) blend3FolderNames.push('Other');
-
-            blend3FolderNames.forEach(folder => {
-                buildAccordion($3cv, folder, blend3Folders[folder], item => {
-                    return buttonPill(`${item.c} + ${item.v}`, () => renderBlendingExercise(item.c, item.v, '3cv'));
+            const cvBlendingSectionGroups = SECTION_GROUPS['cv_blending'] || [];
+            if (cvBlendingSectionGroups.length > 0) {
+                const blend3Folders = {};
+                cvBlendingSectionGroups.forEach(g => { blend3Folders[g.name] = g.cards; });
+                const blend3FolderNames = cvBlendingSectionGroups.map(g => g.name);
+                buildTabs($3cv, blend3FolderNames, blend3Folders, card => {
+                    if (card.source_type === 'cv_blend' && card.cv_code) {
+                        const [c, v] = parseCVCode(card.cv_code);
+                        return buttonPill(cv3Label({c, v}), () => renderBlendingExercise(c, v, '3cv'));
+                    }
+                    return buildPillForCard(card);
                 });
-            });
+            } else {
+                const blend3Folders = {};
+                CV_BLEND_ITEMS.forEach(item => {
+                    const key = `${item.c}-${item.v}`;
+                    const grps = CV_FOLDER_MAP[key];
+                    const list = (grps && grps.length) ? grps : ['Other'];
+                    list.forEach(folder => {
+                        if (!blend3Folders[folder]) blend3Folders[folder] = [];
+                        blend3Folders[folder].push(item);
+                    });
+                });
+                const blend3FolderNames = Object.keys(blend3Folders).filter(f => f !== 'Other').sort();
+                if (blend3Folders['Other']) blend3FolderNames.push('Other');
+                buildTabs($3cv, blend3FolderNames, blend3Folders, item => {
+                    return buttonPill(cv3Label(item), () => renderBlendingExercise(item.c, item.v, '3cv'));
+                });
+            }
         }
 
         if ($sm) {
-            CV_BLEND_ITEMS.forEach(item => {
-                const id = `${item.c}-${item.v}`
-                const label = `${item.c}${item.v}`
-                const pill = buttonPill(label, () => {
-                    selectSoundMix({ type: "cv", id: id })
-                })
-                handlePillPress({ type: "cv", id: id }, pill);
-                $sm.appendChild(pill)
-            })
+            const syllableShiftsSectionGroups = SECTION_GROUPS['syllable_shifts'] || [];
+            if (syllableShiftsSectionGroups.length > 0) {
+                const smFolders = {};
+                syllableShiftsSectionGroups.forEach(g => { smFolders[g.name] = g.cards; });
+                const smFolderNames = syllableShiftsSectionGroups.map(g => g.name);
+                buildTabs($sm, smFolderNames, smFolders, card => {
+                    if (card.source_type === 'cv_blend' && card.cv_code) {
+                        const [c, v] = parseCVCode(card.cv_code);
+                        const id = `${c}-${v}`;
+                        const pill = buttonPill(`${c}${v}`, () => selectSoundMix({ type: 'cv', id }));
+                        handlePillPress({ type: 'cv', id }, pill);
+                        return pill;
+                    }
+                    // Non-cv_blend: use soundMix slot tracking, no blend button
+                    if (card.source_type === 'consonant' && card.consonant_code) {
+                        const src = CONSONANT_IMAGES[card.consonant_code] || `${IMG_BASE}consonant_${card.consonant_code}.png`;
+                        return buttonPillImage(src, card.consonant_code, () => selectNonCVSoundMix(card));
+                    }
+                    if (card.source_type === 'vowel' && card.vowel_code) {
+                        const src = VOWEL_IMAGES[card.vowel_code] || `${IMG_BASE}vowel_${card.vowel_code}.png`;
+                        return buttonPillImage(src, card.vowel_code, () => selectNonCVSoundMix(card));
+                    }
+                    return buttonPill(card.sound_text || '?', () => selectNonCVSoundMix(card));
+                });
+            } else {
+                const smFolders = {};
+                CV_BLEND_ITEMS.forEach(item => {
+                    const key = `${item.c}-${item.v}`;
+                    const grps = CV_FOLDER_MAP[key];
+                    const list = (grps && grps.length) ? grps : ['Other'];
+                    list.forEach(folder => {
+                        if (!smFolders[folder]) smFolders[folder] = [];
+                        smFolders[folder].push(item);
+                    });
+                });
+                const smFolderNames = Object.keys(smFolders).filter(f => f !== 'Other').sort();
+                if (smFolders['Other']) smFolderNames.push('Other');
+                buildTabs($sm, smFolderNames, smFolders, item => {
+                    const id = `${item.c}-${item.v}`;
+                    const pill = buttonPill(`${item.c}${item.v}`, () => selectSoundMix({ type: 'cv', id }));
+                    handlePillPress({ type: 'cv', id }, pill);
+                    return pill;
+                });
+            }
         }
 
         const WORD_FOLDER_ORDER = ['CVCV','VC','CV1CV2','C1V1C2V2 Stage 1','C1V1C2V2 Stage 2','CVC- Bilabial','CVC-Alveolar','CVC-Bilabial/Alveolar'];
 
         if ($ws) {
-            const wordFolders = {};
-            WORDS.forEach(w => {
-                const folder = WORD_FOLDER_MAP[w] || 'Other';
-                if (!wordFolders[folder]) wordFolders[folder] = [];
-                wordFolders[folder].push(w);
-            });
-            const wordFolderNames = Object.keys(wordFolders).filter(f => f !== 'Other').sort((a, b) => {
-                const ai = WORD_FOLDER_ORDER.indexOf(a), bi = WORD_FOLDER_ORDER.indexOf(b);
-                if (ai === -1 && bi === -1) return a.localeCompare(b);
-                if (ai === -1) return 1;
-                if (bi === -1) return -1;
-                return ai - bi;
-            });
-            if (wordFolders['Other']) wordFolderNames.push('Other');
-
-            wordFolderNames.forEach(folder => {
-                buildAccordion($ws, folder, wordFolders[folder], w => {
+            const wordSectionGroups = SECTION_GROUPS['word'] || [];
+            if (wordSectionGroups.length > 0) {
+                const wordFolders = {};
+                wordSectionGroups.forEach(g => { wordFolders[g.name] = g.cards; });
+                const wordFolderNames = wordSectionGroups.map(g => g.name);
+                const groupedWords = new Set();
+                wordSectionGroups.forEach(g => g.cards.forEach(c => {
+                    if (c.source_type === 'word' && c.word_text) groupedWords.add(c.word_text);
+                }));
+                const ungroupedWords = WORDS.filter(w => !WORD_SYLLABLE_MAP[w] && !groupedWords.has(w));
+                if (ungroupedWords.length > 0) {
+                    wordFolders['Other'] = ungroupedWords.map(w => ({ source_type: 'word', word_text: w, sound_text: w }));
+                    wordFolderNames.push('Other');
+                }
+                buildTabs($ws, wordFolderNames, wordFolders, card => buildPillForCard(card));
+            } else {
+                const wordFolders = {};
+                WORDS.forEach(w => {
+                    const grps = WORD_FOLDER_MAP[w];
+                    const list = (grps && grps.length) ? grps : ['Other'];
+                    list.forEach(folder => {
+                        if (!wordFolders[folder]) wordFolders[folder] = [];
+                        wordFolders[folder].push(w);
+                    });
+                });
+                const wordFolderNames = Object.keys(wordFolders).filter(f => f !== 'Other').sort((a, b) => {
+                    const ai = WORD_FOLDER_ORDER.indexOf(a), bi = WORD_FOLDER_ORDER.indexOf(b);
+                    if (ai === -1 && bi === -1) return a.localeCompare(b);
+                    if (ai === -1) return 1;
+                    if (bi === -1) return -1;
+                    return ai - bi;
+                });
+                if (wordFolders['Other']) wordFolderNames.push('Other');
+                buildTabs($ws, wordFolderNames, wordFolders, w => {
                     const pill = buttonPill(w, () => selectWordExercise(w));
                     handlePillPress({ type: "word", id: w }, pill);
                     return pill;
                 });
-            });
+            }
         }
 
         if ($syl) {
-            // Only words with a syllable breakdown
-            const sylWords = WORDS.filter(w => WORD_SYLLABLE_MAP[w]);
-            const sylFolders = {};
-            sylWords.forEach(w => {
-                const folder = WORD_FOLDER_MAP[w] || 'Other';
-                if (!sylFolders[folder]) sylFolders[folder] = [];
-                sylFolders[folder].push(w);
-            });
-            const sylFolderNames = Object.keys(sylFolders).filter(f => f !== 'Other').sort((a, b) => {
-                const ai = WORD_FOLDER_ORDER.indexOf(a), bi = WORD_FOLDER_ORDER.indexOf(b);
-                if (ai === -1 && bi === -1) return a.localeCompare(b);
-                if (ai === -1) return 1;
-                if (bi === -1) return -1;
-                return ai - bi;
-            });
-            if (sylFolders['Other']) sylFolderNames.push('Other');
+            const sectionGroups = SECTION_GROUPS['3cv_blend'] || [];
 
-            sylFolderNames.forEach(folder => {
-                buildAccordion($syl, folder, sylFolders[folder], w => {
+            if (sectionGroups.length > 0) {
+                // Use cross-type group data — groups can contain cards of any type
+                const sylFolders = {};
+                sectionGroups.forEach(g => { sylFolders[g.name] = g.cards; });
+                const sylFolderNames = sectionGroups.map(g => g.name);
+
+                buildTabs($syl, sylFolderNames, sylFolders, card => {
+                    const makePill = () => {
+                        if (card.source_type === '3cv_blend' && card.syllable_breakdown) {
+                            const label = card.syllable_breakdown.split('-').join(' + ');
+                            return buttonPill(label, () => renderSyllableExercise(card.word_text));
+                        }
+                        if (card.source_type === 'consonant' && card.consonant_code) {
+                            const src = CONSONANT_IMAGES[card.consonant_code] || `${basePath}consonant_${card.consonant_code}.png`;
+                            const pill = buttonPillImage(src, card.consonant_code, () => handleItemSelection({ type: 'consonant', id: card.consonant_code }));
+                            handlePillPress({ type: 'consonant', id: card.consonant_code }, pill);
+                            return pill;
+                        }
+                        if (card.source_type === 'vowel' && card.vowel_code) {
+                            const src = VOWEL_IMAGES[card.vowel_code] || `${basePath}vowel_${card.vowel_code}.png`;
+                            const pill = buttonPillImage(src, card.vowel_code, () => handleItemSelection({ type: 'vowel', id: card.vowel_code }));
+                            handlePillPress({ type: 'vowel', id: card.vowel_code }, pill);
+                            return pill;
+                        }
+                        if (card.source_type === 'cv_blend' && card.cv_code) {
+                            const [cvC, cvV] = parseCVCode(card.cv_code);
+                            const cvKey = `${cvC}-${cvV}`;
+                            const src = CV_IMAGES[cvKey] || `${basePath}generated_images_cv/00_${cvKey.replace('-', '_')}.png`;
+                            return buttonPillImage(src, `${cvC}${cvV}`, () => renderBlendingExercise(cvC, cvV, 'cv'));
+                        }
+                        if (card.source_type === 'word' && card.word_text) {
+                            return buttonPill(card.word_text, () => selectWordExercise(card.word_text));
+                        }
+                        // Fallback: text pill with whatever label we have
+                        return buttonPill(card.sound_text || '?', () => {});
+                    };
+                    return makePill();
+                });
+            } else {
+                // Fallback: original word-based folder grouping
+                const sylWords = WORDS.filter(w => WORD_SYLLABLE_MAP[w]);
+                const sylFolders = {};
+                sylWords.forEach(w => {
+                    const grps = WORD_FOLDER_MAP[w];
+                    const list = (grps && grps.length) ? grps : ['Other'];
+                    list.forEach(folder => {
+                        if (!sylFolders[folder]) sylFolders[folder] = [];
+                        sylFolders[folder].push(w);
+                    });
+                });
+                const sylFolderNames = Object.keys(sylFolders).filter(f => f !== 'Other').sort((a, b) => {
+                    const ai = WORD_FOLDER_ORDER.indexOf(a), bi = WORD_FOLDER_ORDER.indexOf(b);
+                    if (ai === -1 && bi === -1) return a.localeCompare(b);
+                    if (ai === -1) return 1;
+                    if (bi === -1) return -1;
+                    return ai - bi;
+                });
+                if (sylFolders['Other']) sylFolderNames.push('Other');
+                buildTabs($syl, sylFolderNames, sylFolders, w => {
                     const breakdown = WORD_SYLLABLE_MAP[w];
                     const label = breakdown.split('-').join(' + ');
                     return buttonPill(label, () => renderSyllableExercise(w));
                 });
-            });
+            }
         }
     }
 
@@ -1501,7 +1807,7 @@ error_log("===========================");
         if (item.type === "vowel")     return VOWEL_IMAGES[item.id] || `${IMG_BASE}vowel_${item.id}.png`;
         if (item.type === "consonant") return CONSONANT_IMAGES[item.id] || `${IMG_BASE}consonant_${item.id}.png`;
         if (item.type === "cv")        return CV_IMAGES[item.id] || `${IMG_BASE}cv_${item.id.replace('-', '_')}.jpg`;
-        if (item.type === "3cv")        return `${IMG_BASE}3cv_${item.id.replace('-', '_')}.jpg`;
+        if (item.type === "3cv")        return CV_IMAGES[item.id] || `${IMG_BASE}3cv_${item.id.replace('-', '_')}.jpg`;
         return "";
     }
 
@@ -1509,7 +1815,7 @@ error_log("===========================");
         if (item.type === "vowel")     return VOWEL_IMAGES[item.id] || `${IMG_BASE}top_vowel_${item.id}.png`;
         if (item.type === "consonant") return CONSONANT_IMAGES[item.id] || `${IMG_BASE}top_consonant_${item.id}.png`;
         if (item.type === "cv")        return CV_IMAGES[item.id] || `${IMG_BASE}top_cv_${item.id.replace('-', '_')}.jpg`;
-        if (item.type === "3cv")        return `${IMG_BASE}top_3cv_${item.id.replace('-', '_')}.jpg`;
+        if (item.type === "3cv")        return CV_IMAGES[item.id] || `${IMG_BASE}top_3cv_${item.id.replace('-', '_')}.jpg`;
         return "";
     }
 
@@ -1542,19 +1848,12 @@ error_log("===========================");
                 topImg.alt = label;
                 topImg.className = 'exercise-main-img';
                 content.appendChild(topImg);
-            } else {
-                const span = document.createElement('span');
-                span.textContent = label;
-                content.appendChild(span);
             }
 
-            if (hasIcon) {
-                const iconImg = document.createElement('img');
-                iconImg.src = iconSrc + '?v=' + ASSET_VER;
-                iconImg.alt = label + " icon";
-                iconImg.className = 'exercise-icon-img';
-                content.appendChild(iconImg);
-            }
+            const labelSpan = document.createElement('span');
+            labelSpan.className = 'cv-parts-text';
+            labelSpan.textContent = label;
+            content.appendChild(labelSpan);
 
             return;
         }
@@ -1576,6 +1875,7 @@ error_log("===========================");
             }
 
             const wordSpan = document.createElement('span');
+            wordSpan.className = 'cv-parts-text';
             wordSpan.textContent = word;
             content.appendChild(wordSpan);
             return;
@@ -1590,7 +1890,8 @@ error_log("===========================");
                 topBase = `${IMG_BASE}top_3cv_${baseId}`;
             }
 
-            const topSrc   = await firstExistingImage(topBase);
+            const cvImgOverride = (item.type === '3cv') ? CV_IMAGES[item.id] : null;
+            const topSrc   = cvImgOverride || await firstExistingImage(topBase);
             const consSrc  = CONSONANT_IMAGES[cons] || await firstExistingImage(`${IMG_BASE}consonant_${cons}`);
             const vowelSrc = VOWEL_IMAGES[vowelCode] || await firstExistingImage(`${IMG_BASE}vowel_${vowelCode}`);
 
@@ -1638,6 +1939,18 @@ error_log("===========================");
         const span = document.createElement('span');
         span.textContent = label;
         content.appendChild(span);
+    }
+
+    function resetCardsAfterSuccess() {
+        document.querySelectorAll('#exercise-view .exercise-card').forEach(c => c.classList.remove('completed'));
+        const btn = document.getElementById('btnSuccess');
+        if (btn) btn.disabled = true;
+
+        // Reset fill indices so next pill click fills from card 0 instead of last slot
+        selectedCardIndex = null;
+        if (cardAssignments.length)     cardAssignments     = new Array(cardAssignments.length).fill(null);
+        if (soundMixAssignments.length) soundMixAssignments = new Array(soundMixAssignments.length).fill(null);
+        if (wordAssignments.length)     wordAssignments     = new Array(wordAssignments.length).fill(null);
     }
 
     function resetExerciseArea() {
@@ -1705,12 +2018,14 @@ error_log("===========================");
         }
         if (wrap) wrap.innerHTML = '';
 
-        const count = getExerciseCount();
+        const count        = getExerciseCount();
+        const isRestoring  = savedSoundMixAssignments !== null;
 
-        if (!soundMixAssignments || soundMixAssignments.length !== count || grid.children.length !== count) {
-            soundMixAssignments = new Array(count).fill(null);
+        if (isRestoring || !soundMixAssignments || soundMixAssignments.length !== count || grid.children.length !== count) {
+            soundMixAssignments  = isRestoring ? savedSoundMixAssignments.slice() : new Array(count).fill(null);
+            savedSoundMixAssignments = null;
             grid.innerHTML = "";
-            grid.classList.add('vertical-layout');
+            grid.classList.remove('vertical-layout');
             if (btnSuccess) btnSuccess.disabled = true;
 
             for (let i = 0; i < count; i++) {
@@ -1749,30 +2064,37 @@ error_log("===========================");
             }
         }
 
-        let idx = soundMixAssignments.findIndex(x => x === null);
-        if (idx === -1) {
-            idx = count - 1;
+        if (isRestoring) {
+            // Rebuild all previously filled cards from saved state
+            const allCards = grid.querySelectorAll('.exercise-card');
+            for (let i = 0; i < count; i++) {
+                if (soundMixAssignments[i]) {
+                    await fillOneSoundMixCard(soundMixAssignments[i], allCards[i]);
+                }
+            }
+            return;
         }
+
+        let idx = soundMixAssignments.findIndex(x => x === null);
+        if (idx === -1) idx = count - 1;
 
         soundMixAssignments[idx] = item;
 
+        const allCards = grid.querySelectorAll('.exercise-card');
+        await fillOneSoundMixCard(item, allCards[idx]);
+    }
+
+    async function fillOneSoundMixCard(item, card) {
         const [cons, vowelCode] = item.id.split('-');
-        const baseId   = `${cons}_${vowelCode}`;
-        let   topBase  = `${IMG_BASE}top_cv_${baseId}`;
-        if (item.type === "3cv") {
-            topBase = `${IMG_BASE}top_3cv_${baseId}`;
-        }
+        const baseId = `${cons}_${vowelCode}`;
 
-        const topSrc   = await firstExistingImage(topBase);
-        const consSrc  = CONSONANT_IMAGES[cons] || await firstExistingImage(`${IMG_BASE}consonant_${cons}`);
-        const vowelSrc = VOWEL_IMAGES[vowelCode] || await firstExistingImage(`${IMG_BASE}vowel_${vowelCode}`);
-
+        const topSrc = CV_IMAGES[item.id]
+            || (CV_SOUND_MAP[baseId] ? `${IMG_BASE}generated_images_cv/00_${CV_SOUND_MAP[baseId]}.png` : null)
+            || await firstExistingImage(`${IMG_BASE}top_cv_${baseId}`);
         const label = prettyLabel(item);
 
-        const cards   = grid.querySelectorAll('.exercise-card');
-        const card    = cards[idx];
         const content = card.querySelector('.exercise-content');
-        content.innerHTML = "";
+        content.innerHTML = '';
 
         if (topSrc) {
             const topImg = document.createElement('img');
@@ -1788,30 +2110,142 @@ error_log("===========================");
 
         const bottomRow = document.createElement('div');
         bottomRow.className = 'cv-bottom-row';
-
-        if (consSrc) {
-            const cImg = document.createElement('img');
-            cImg.src = consSrc + '?v=' + ASSET_VER;
-            cImg.alt = `Consonant ${cons}`;
-            bottomRow.appendChild(cImg);
-        } else {
-            const cText = document.createElement('span');
-            cText.textContent = cons;
-            bottomRow.appendChild(cText);
-        }
-
-        if (vowelSrc) {
-            const vImg = document.createElement('img');
-            vImg.src = vowelSrc + '?v=' + ASSET_VER;
-            vImg.alt = `Vowel ${vowelCode}`;
-            bottomRow.appendChild(vImg);
-        } else {
-            const vText = document.createElement('span');
-            vText.textContent = vowelCode;
-            bottomRow.appendChild(vText);
-        }
-
+        const cvText = document.createElement('span');
+        cvText.className = 'cv-parts-text';
+        cvText.textContent = cons + vowelCode;
+        bottomRow.appendChild(cvText);
         content.appendChild(bottomRow);
+
+        const actions = card.querySelector('.exercise-card-actions');
+        if (actions) {
+            const existing = actions.querySelector('.blend-btn');
+            if (existing) existing.remove();
+            const blendBtn = document.createElement('button');
+            blendBtn.type = 'button';
+            blendBtn.className = 'change-card-btn blend-btn';
+            blendBtn.textContent = 'CV Blending';
+            blendBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                cvBlendingSource = 'soundmixing';
+                savedSoundMixAssignments = soundMixAssignments.slice();
+                switchPanelContext('panel-3cv');
+                renderBlendingExercise(cons, vowelCode, '3cv');
+            });
+            actions.appendChild(blendBtn);
+        }
+    }
+
+    // Render a non-cv_blend card into an existing soundMix slot (no blend button)
+    async function fillNonCVSoundMixCard(card, cardEl) {
+        const existing = cardEl.querySelector('.blend-btn');
+        if (existing) existing.remove();
+
+        const content = cardEl.querySelector('.exercise-content');
+        if (!content) return;
+        content.innerHTML = '';
+
+        if (card.source_type === 'consonant' && card.consonant_code) {
+            const src = CONSONANT_IMAGES[card.consonant_code] || `${IMG_BASE}consonant_${card.consonant_code}.png`;
+            const img = document.createElement('img');
+            img.src = src + '?v=' + ASSET_VER;
+            img.alt = card.consonant_code;
+            img.className = 'exercise-main-img';
+            content.appendChild(img);
+            const span = document.createElement('span');
+            span.className = 'cv-parts-text';
+            span.textContent = card.consonant_code;
+            content.appendChild(span);
+        } else if (card.source_type === 'vowel' && card.vowel_code) {
+            const src = VOWEL_IMAGES[card.vowel_code] || `${IMG_BASE}vowel_${card.vowel_code}.png`;
+            const img = document.createElement('img');
+            img.src = src + '?v=' + ASSET_VER;
+            img.alt = card.vowel_code;
+            img.className = 'exercise-main-img';
+            content.appendChild(img);
+            const span = document.createElement('span');
+            span.className = 'cv-parts-text';
+            span.textContent = card.vowel_code;
+            content.appendChild(span);
+        } else if (card.source_type === '3cv_blend' && card.syllable_breakdown) {
+            const span = document.createElement('span');
+            span.className = 'cv-parts-text';
+            span.textContent = card.syllable_breakdown.split('-').join(' + ');
+            content.appendChild(span);
+        } else if (card.source_type === 'word' && card.word_text) {
+            const span = document.createElement('span');
+            span.className = 'cv-parts-text';
+            span.textContent = card.word_text;
+            content.appendChild(span);
+        } else {
+            const span = document.createElement('span');
+            span.textContent = card.sound_text || '?';
+            content.appendChild(span);
+        }
+
+        const btnSuccess = document.getElementById('btnSuccess');
+        if (btnSuccess && soundMixAssignments.length > 0 && soundMixAssignments.every(x => x !== null)) {
+            btnSuccess.disabled = false;
+        }
+    }
+
+    // Place a non-cv_blend card into the soundMix exercise grid (fills next empty slot)
+    async function selectNonCVSoundMix(card) {
+        const grid      = document.getElementById('exercise-view');
+        const btnSuccess = document.getElementById('btnSuccess');
+        if (!grid) return;
+
+        isSoundMixingMode  = true;
+        isWordSyllableMode = false;
+        isCVBlendingMode   = false;
+
+        const title = document.getElementById('choices-title');
+        const wrap  = document.getElementById('choices-wrap');
+        if (title) { title.style.display = 'none'; title.textContent = ''; }
+        if (wrap)  wrap.innerHTML = '';
+
+        const count = getExerciseCount();
+
+        // Init the soundMix grid if it isn't already set up
+        if (!soundMixAssignments || soundMixAssignments.length !== count || grid.children.length !== count) {
+            soundMixAssignments = new Array(count).fill(null);
+            savedSoundMixAssignments = null;
+            grid.innerHTML = '';
+            grid.classList.remove('vertical-layout');
+            if (btnSuccess) btnSuccess.disabled = true;
+
+            for (let i = 0; i < count; i++) {
+                const cardEl  = document.createElement('div');
+                cardEl.className = 'exercise-card';
+                const content = document.createElement('div');
+                content.className = 'exercise-content';
+                const span = document.createElement('span');
+                span.textContent = 'Choose sound';
+                span.classList.add('text-muted');
+                content.appendChild(span);
+                cardEl.appendChild(content);
+                const actions = document.createElement('div');
+                actions.className = 'exercise-card-actions';
+                const changeBtn = document.createElement('button');
+                changeBtn.type = 'button';
+                changeBtn.className = 'change-card-btn';
+                changeBtn.textContent = 'Change Card';
+                changeBtn.addEventListener('click', function(e) { e.stopPropagation(); handleChangeCard(cardEl); });
+                actions.appendChild(changeBtn);
+                grid.appendChild(cardEl);
+                cardEl.appendChild(actions);
+                wireExerciseCardClick(cardEl);
+            }
+        }
+
+        let idx = soundMixAssignments.findIndex(x => x === null);
+        if (idx === -1) idx = 0;
+
+        soundMixAssignments[idx] = { _nonCV: true, _card: card };
+
+        const allCards = grid.querySelectorAll('.exercise-card');
+        if (allCards[idx]) {
+            await fillNonCVSoundMixCard(card, allCards[idx]);
+        }
     }
 
     async function firstExistingImage(basePath) {
@@ -1844,12 +2278,20 @@ error_log("===========================");
             else p.classList.remove('open')
         })
 
+        const titleEl = document.getElementById('exercise-panel-title')
+        if (titleEl) {
+            titleEl.textContent = btn.textContent.trim()
+            titleEl.classList.add('panel-active')
+        }
+
         if (isSwitchingPanels) {
             activePanelId = target
+            updateVideoBtnForPanel(target)
 
             isSoundMixingMode  = (target === 'panel-soundmixing')
             isWordSyllableMode = (target === 'panel-wordsyllable')
             isCVBlendingMode   = (target === 'panel-cv')
+            cvBlendingSource   = null
 
             cardSelectEnabled = !isCVBlendingMode
             selectedCardIndex = null
@@ -1858,6 +2300,29 @@ error_log("===========================");
             document.querySelectorAll('.exercise-card').forEach(c => c.classList.remove('selected'))
         }
     })
+
+    function switchPanelContext(panelId) {
+        // Open the destination pill panel, close all others
+        document.querySelectorAll('.slide-panel').forEach(p => {
+            if (p.id === panelId) p.classList.add('open');
+            else p.classList.remove('open');
+        });
+
+        // Update the header title to match the destination panel's category button
+        const categoryBtn = document.querySelector(`.category-btn[data-panel="${panelId}"]`);
+        const titleEl = document.getElementById('exercise-panel-title');
+        if (titleEl && categoryBtn) {
+            titleEl.textContent = categoryBtn.textContent.trim();
+            titleEl.classList.add('panel-active');
+        }
+
+        activePanelId      = panelId;
+        isSoundMixingMode  = (panelId === 'panel-soundmixing');
+        isWordSyllableMode = (panelId === 'panel-wordsyllable');
+        isCVBlendingMode   = (panelId === 'panel-cv');
+
+        updateVideoBtnForPanel(panelId);
+    }
 
     function selectByObject(obj){
         let idx = SEQUENCE.findIndex(x => x.type===obj.type && x.id===obj.id);
@@ -1912,7 +2377,7 @@ error_log("===========================");
                     topBase = `${IMG_BASE}top_3cv_${baseId}`;
                 }
 
-                topSrc  = await firstExistingImage(topBase);
+                topSrc  = (item.type === "3cv" ? CV_IMAGES[item.id] : null) || await firstExistingImage(topBase);
                 hasTop  = !!topSrc;
 
                 cvConsonantSrc   = CONSONANT_IMAGES[cons] || await firstExistingImage(`${IMG_BASE}consonant_${cons}`);
@@ -2056,7 +2521,7 @@ error_log("===========================");
             freshBtn.disabled = true;
             btnSuccess.parentNode.replaceChild(freshBtn, btnSuccess);
             freshBtn.addEventListener('click', function () {
-                if (selectedSuccessMedia) playSuccessMedia();
+                if (selectedSuccessMedia) { playSuccessMedia(); } else { new bootstrap.Modal('#successModal').show(); }
             });
         }
 
@@ -2103,8 +2568,20 @@ error_log("===========================");
                 const toggleBtn = document.createElement('button');
                 toggleBtn.className = 'btn btn-success mt-2';
                 toggleBtn.style.cssText = 'font-size:1.25rem; padding:0.5rem 1.25rem; color:#fff;';
-                toggleBtn.textContent = 'CV';
-                toggleBtn.addEventListener('click', () => renderBlendingExercise(cons, vowelCode, '3cv'));
+                if (cvBlendingSource === 'soundmixing') {
+                    toggleBtn.textContent = 'Syllable Shifts';
+                    toggleBtn.addEventListener('click', () => {
+                        cvBlendingSource = null;
+                        switchPanelContext('panel-soundmixing');
+                        selectSoundMix({ type: 'cv', id: `${cons}-${vowelCode}` });
+                    });
+                } else {
+                    toggleBtn.textContent = 'CV Blending';
+                    toggleBtn.addEventListener('click', () => {
+                        switchPanelContext('panel-3cv');
+                        renderBlendingExercise(cons, vowelCode, '3cv');
+                    });
+                }
                 wrap.appendChild(toggleBtn);
             }
         } else {
@@ -2112,7 +2589,9 @@ error_log("===========================");
             grid.classList.add('vertical-layout');
 
             const baseId   = `${cons}_${vowelCode}`;
-            const wholeSrc = await firstExistingImage(`${IMG_BASE}top_3cv_${baseId}`);
+            const wholeSrc = CV_IMAGES[`${cons}-${vowelCode}`]
+                || (CV_SOUND_MAP[baseId] ? `${IMG_BASE}generated_images_cv/00_${CV_SOUND_MAP[baseId]}.png` : null)
+                || await firstExistingImage(`${IMG_BASE}top_3cv_${baseId}`);
 
             const cardsCol = document.createElement('div');
             cardsCol.style.cssText = 'display:flex; flex-direction:column;';
@@ -2151,21 +2630,55 @@ error_log("===========================");
                 const img = document.createElement('img');
                 img.src = wholeSrc + '?v=' + ASSET_VER;
                 img.alt = whole;
-                img.style.cssText = 'max-width:160px; max-height:160px; object-fit:contain;';
+                img.style.cssText = 'max-width:400px; max-height:400px; object-fit:contain;';
                 imageCol.appendChild(img);
 
                 // Toggle button under the image
                 const toggleBtn = document.createElement('button');
                 toggleBtn.className = 'btn btn-success';
                 toggleBtn.style.cssText = 'font-size:1.25rem; padding:0.5rem 1.25rem; color:#fff;';
-                toggleBtn.textContent = 'C-V';
-                toggleBtn.addEventListener('click', () => renderBlendingExercise(cons, vowelCode, 'cv'));
+                if (cvBlendingSource === 'soundmixing') {
+                    toggleBtn.textContent = 'Syllable Shifts';
+                    toggleBtn.addEventListener('click', () => {
+                        cvBlendingSource = null;
+                        switchPanelContext('panel-soundmixing');
+                        selectSoundMix({ type: 'cv', id: `${cons}-${vowelCode}` });
+                    });
+                } else {
+                    toggleBtn.textContent = 'C-V';
+                    toggleBtn.addEventListener('click', () => {
+                        switchPanelContext('panel-cv');
+                        renderBlendingExercise(cons, vowelCode, 'cv');
+                    });
+                }
                 imageCol.appendChild(toggleBtn);
 
                 wrapper.appendChild(cardsCol);
                 wrapper.appendChild(imageCol);
                 grid.appendChild(wrapper);
             } else {
+                // No image — add toggle button in wrap
+                if (wrap) {
+                    wrap.style.justifyContent = 'center';
+                    const toggleBtn = document.createElement('button');
+                    toggleBtn.className = 'btn btn-success mt-2';
+                    toggleBtn.style.cssText = 'font-size:1.25rem; padding:0.5rem 1.25rem; color:#fff;';
+                    if (cvBlendingSource === 'soundmixing') {
+                        toggleBtn.textContent = 'Syllable Shifts';
+                        toggleBtn.addEventListener('click', () => {
+                            cvBlendingSource = null;
+                            switchPanelContext('panel-soundmixing');
+                            selectSoundMix({ type: 'cv', id: `${cons}-${vowelCode}` });
+                        });
+                    } else {
+                        toggleBtn.textContent = 'C-V';
+                        toggleBtn.addEventListener('click', () => {
+                            switchPanelContext('panel-cv');
+                            renderBlendingExercise(cons, vowelCode, 'cv');
+                        });
+                    }
+                    wrap.appendChild(toggleBtn);
+                }
                 grid.appendChild(cardsCol);
             }
         }
@@ -2193,7 +2706,7 @@ error_log("===========================");
             freshBtn.disabled = true;
             btnSuccess.parentNode.replaceChild(freshBtn, btnSuccess);
             freshBtn.addEventListener('click', function () {
-                if (selectedSuccessMedia) playSuccessMedia();
+                if (selectedSuccessMedia) { playSuccessMedia(); } else { new bootstrap.Modal('#successModal').show(); }
             });
         }
 
@@ -2202,7 +2715,7 @@ error_log("===========================");
         if (title) { title.style.display = 'none'; title.textContent = ''; }
         if (wrap)  wrap.innerHTML = '';
 
-        const breakdown  = WORD_SYLLABLE_MAP[word] || word;
+        const breakdown  = (word && WORD_SYLLABLE_MAP[word]) ? WORD_SYLLABLE_MAP[word] : (word || '');
         const partsLabel = breakdown.split('-').join(' + ');
         const imgSrc     = WORD_IMAGES[word.toLowerCase()] || null;
 
@@ -2246,7 +2759,7 @@ error_log("===========================");
             const img = document.createElement('img');
             img.src = imgSrc + '?v=' + ASSET_VER;
             img.alt = word;
-            img.style.cssText = 'max-width:160px; max-height:160px; object-fit:contain;';
+            img.style.cssText = 'max-width:400px; max-height:400px; object-fit:contain;';
             imageCol.appendChild(img);
 
             // Toggle button to Words exercise
@@ -2304,7 +2817,7 @@ error_log("===========================");
             let topBase = `${IMG_BASE}top_cv_${baseId}`;
             if (item.type === "3cv") topBase = `${IMG_BASE}top_3cv_${baseId}`;
 
-            topSrc = await firstExistingImage(topBase);
+            topSrc = (item.type === "3cv" ? CV_IMAGES[item.id] : null) || await firstExistingImage(topBase);
             hasTop = !!topSrc;
 
             const consSrc  = CONSONANT_IMAGES[cons] || await firstExistingImage(`${IMG_BASE}consonant_${cons}`);
@@ -2442,6 +2955,7 @@ error_log("===========================");
         }
 
         const wordSpan = document.createElement('span');
+        wordSpan.className = 'cv-parts-text';
         wordSpan.textContent = word;
         content.appendChild(wordSpan);
 
@@ -2558,21 +3072,61 @@ error_log("===========================");
     $('#btnBack').on('click', function(){ if (currentIndex>0){ currentIndex--; renderExercise(SEQUENCE[currentIndex]); }});
     $('#btnNext').on('click', function(){ if (currentIndex<SEQUENCE.length-1){ currentIndex++; renderExercise(SEQUENCE[currentIndex]); }});
 
+    // ---- Video Tutorial slot map (injected from PHP) ----
+    const VIDEO_SLOT_MAP = <?= json_encode($videoSlotMap) ?>;
+
+    function ytEmbedUrl(url) {
+        try {
+            const u = new URL(url);
+            let id = null;
+            if (u.hostname.includes('youtu.be')) id = u.pathname.slice(1);
+            else if (u.hostname.includes('youtube.com')) id = u.searchParams.get('v') || (u.pathname.startsWith('/embed/') ? u.pathname.split('/')[2] : null);
+            if (id) return 'https://www.youtube.com/embed/' + id + '?autoplay=1';
+            if (u.hostname.includes('vimeo.com')) return 'https://player.vimeo.com/video' + u.pathname + '?autoplay=1';
+        } catch(e) {}
+        return null;
+    }
+
+    function updateVideoBtnForPanel(panelId) {
+        const btn  = document.getElementById('btnVideo');
+        const wrap = btn ? btn.closest('.mt-3') : null;
+        if (!btn) return;
+        const hasVideo = panelId && VIDEO_SLOT_MAP[panelId];
+        if (wrap) wrap.style.display = hasVideo ? '' : 'none';
+    }
+
     $('#btnVideo').on('click', function () {
-        new bootstrap.Modal('#videoModal').show();
+        const video = VIDEO_SLOT_MAP[activePanelId];
+        if (!video) return;
+        const wrap = document.getElementById('videoPlayerWrap');
+        document.getElementById('videoTitle').textContent = video.title || 'Video Example';
+        const embedUrl = video.source_type === 'url' ? ytEmbedUrl(video.video_path) : null;
+        if (embedUrl) {
+            wrap.innerHTML = `<iframe src="${embedUrl}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="width:100%;height:100%;border:0;"></iframe>`;
+        } else {
+            wrap.innerHTML = `<video src="${video.video_path}" controls autoplay style="width:100%;height:100%;border-radius:4px;"></video>`;
+        }
+        const modal = new bootstrap.Modal('#videoModal');
+        modal.show();
+        // Stop playback when modal closes
+        document.getElementById('videoModal').addEventListener('hidden.bs.modal', () => {
+            wrap.innerHTML = '';
+        }, { once: true });
     });
 
     // SUCCESS BUTTON - Updated to use custom media or default
     $('#btnSuccess').on('click', function () {
         if (selectedSuccessMedia) {
             playSuccessMedia();
+        } else {
+            new bootstrap.Modal('#successModal').show();
         }
     });
 
     const successModalEl = document.getElementById('successModal');
     if (successModalEl) {
         successModalEl.addEventListener('hidden.bs.modal', function () {
-            // Intentionally empty
+            resetCardsAfterSuccess();
         });
     }
 
@@ -2855,6 +3409,15 @@ error_log("===========================");
             const assignmentId = $(this).data('id');
             deleteAssignment(assignmentId);
         });
+
+        // Mobile: title = assignment name (col 0), hide description (col 1) and date (col 2)
+        if (window.MKAMobile) {
+            MKAMobile.initTable('#assignmentsTable', {
+                titleCol   : 0,
+                hideCols   : [1, 2],
+                dtInstance : assignmentsTable
+            });
+        }
     }
 
     document.addEventListener('click', (e) => {
@@ -3593,7 +4156,7 @@ error_log("===========================");
                 topBase = `${IMG_BASE}top_3cv_${baseId}`;
             }
 
-            const topSrc = await firstExistingImage(topBase);
+            const topSrc = (item.type === '3cv' ? CV_IMAGES[item.id] : null) || await firstExistingImage(topBase);
             const consSrc = CONSONANT_IMAGES[cons] || await firstExistingImage(`${IMG_BASE}consonant_${cons}`);
             const vowelSrc = VOWEL_IMAGES[vowelCode] || await firstExistingImage(`${IMG_BASE}vowel_${vowelCode}`);
 

@@ -32,13 +32,13 @@ class LoginHandler
             return ['success' => false, 'message' => 'Invalid login credentials.'];
         }
 
-        // Check for expired trial (but NOT for super_user)
-        if ($user['user_type'] !== 'super_user' && $user['Status'] === 'trial' && !empty($user['TrialExpires'])) {
+        // Check for expired trial (but NOT for super_user or paid users)
+        if ($user['user_type'] !== 'super_user' && $user['IsPaid'] !== 'y' && !empty($user['TrialExpires'])) {
             $now = new \DateTime();
             $trialExpires = new \DateTime($user['TrialExpires']);
 
             if ($now > $trialExpires) {
-                return ['success' => false, 'message' => 'Trial expired. Please upgrade your account.'];
+                return ['success' => false, 'trial_expired' => true, 'user_uuid' => $user['UserUUID']];
             }
         }
 

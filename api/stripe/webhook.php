@@ -40,6 +40,8 @@ try {
             break;
 
         case 'customer.subscription.updated':
+        case 'customer.subscription.paused':
+        case 'customer.subscription.resumed':
             $subscription = $event->data->object;
             handleSubscriptionUpdated($pdo, $subscription);
             break;
@@ -47,6 +49,11 @@ try {
         case 'customer.subscription.deleted':
             $subscription = $event->data->object;
             handleSubscriptionDeleted($pdo, $subscription);
+            break;
+
+        case 'invoice.created':
+            $invoice = $event->data->object;
+            handleInvoiceCreated($pdo, $invoice);
             break;
 
         case 'invoice.payment_succeeded':
@@ -396,6 +403,57 @@ function handlePaymentFailed($pdo, $invoice) {
     ]);
 }
 
+function handleInvoiceCreated($pdo, $invoice) {
+    // Only act on draft invoices (invoice.created always fires in draft state)
+    if (($invoice->status ?? '') !== 'draft') return;
+
+    $subscriptionId = $invoice->subscription ?? null;
+    if (!$subscriptionId) return;
+
+    // Look up subscription in our DB — only matches SLP base subscriptions
+    // (capacity packs are stored in slp_capacity_addons, not user_subscriptions)
+    $stmt = $pdo->prepare("
+        SELECT u.UserUUID, u.user_type
+        FROM user_subscriptions us
+        JOIN mka_users u ON u.UserUUID = us.user_uuid
+        WHERE us.stripe_subscription_id = ?
+          AND us.status IN ('active', 'trial')
+        LIMIT 1
+    ");
+    $stmt->execute([$subscriptionId]);
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    // Credits only apply to SLP (enterprise_admin) base subscriptions
+    if (!$user || $user['user_type'] !== 'enterprise_admin') return;
+
+    $slpUuid = $user['UserUUID'];
+    $paidCount = SLPBilling::getPaidPatientCount($slpUuid, $pdo);
+
+    if ($paidCount <= 0) return;
+
+    $creditCents = (int) round($paidCount * SLPBilling::CREDIT_PER_PATIENT * 100);
+    $label = $paidCount . ' patient' . ($paidCount > 1 ? 's' : '') . ' × $' . number_format(SLPBilling::CREDIT_PER_PATIENT, 2);
+
+    try {
+        \Stripe\InvoiceItem::create([
+            'customer'    => $invoice->customer,
+            'invoice'     => $invoice->id,
+            'amount'      => -$creditCents,
+            'currency'    => 'usd',
+            'description' => "Patient affiliation credit ({$label})",
+        ]);
+
+        MKALogger::log('slp_invoice_credit_applied', [
+            'slp_uuid'      => $slpUuid,
+            'invoice_id'    => $invoice->id,
+            'patient_count' => $paidCount,
+            'credit_amount' => $creditCents / 100,
+        ]);
+    } catch (Exception $e) {
+        error_log("Failed to apply SLP invoice credit for {$slpUuid}: " . $e->getMessage());
+    }
+}
+
 function mapStripeStatus($stripeStatus) {
     $statusMap = [
         'active' => 'active',
@@ -404,7 +462,8 @@ function mapStripeStatus($stripeStatus) {
         'incomplete' => 'suspended',
         'incomplete_expired' => 'expired',
         'past_due' => 'suspended',
-        'unpaid' => 'suspended'
+        'unpaid' => 'suspended',
+        'paused' => 'suspended'
     ];
 
     return $statusMap[$stripeStatus] ?? 'suspended';

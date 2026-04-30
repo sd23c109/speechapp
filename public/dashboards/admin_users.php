@@ -18,6 +18,14 @@ if (!in_array($userType, ['super_user', 'enterprise_admin'])) {
     exit;
 }
 
+// For super_user: fetch all SLPs for the affiliation dropdown
+$slpList = [];
+if ($userType === 'super_user') {
+    $slpStmt = $pdo->prepare("SELECT UserUUID, Name FROM mka_users WHERE user_type = 'enterprise_admin' ORDER BY Name ASC");
+    $slpStmt->execute();
+    $slpList = $slpStmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
 // Super users can create enterprise_admin and end_user
 // Enterprise admins can only create end_user
 $canCreateAdmin = ($userType === 'super_user');
@@ -32,7 +40,7 @@ $canCreateAdmin = ($userType === 'super_user');
     <link rel="shortcut icon"href="/dashboards/img/favicon.ico">
     <link href="css/bootstrap.min.css" rel="stylesheet" type="text/css">
     <link href="plugins/fontawesome/css/all.min.css" rel="stylesheet" type="text/css">
-    <link href="css/style.min.css" rel="stylesheet" type="text/css">
+    <link href="css/style.min.css?v=<?= ASSET_VER ?>" rel="stylesheet" type="text/css">
     <link href="plugins/toastr/css/toastr.min.css" rel="stylesheet">
     <script src="plugins/jquery/js/jquery.min.js"></script>
 
@@ -220,13 +228,9 @@ $canCreateAdmin = ($userType === 'super_user');
 
                 <div class="row">
                     <div class="col-xl-4 text-right">
-                        <?php if ($userType === 'enterprise_admin'): ?>
+                        <?php if (in_array($userType, ['enterprise_admin', 'super_user'])): ?>
                             <button class="btn btn-primary mt-3" onclick="showInviteUserModal()">
                                 <i class="fa fa-envelope"></i> Invite User
-                            </button>
-                        <?php else: ?>
-                            <button class="btn btn-primary mt-3" onclick="showCreateUserModal()">
-                                <i class="fa fa-plus"></i> Add User
                             </button>
                         <?php endif; ?>
                     </div>
@@ -238,7 +242,13 @@ $canCreateAdmin = ($userType === 'super_user');
                             <div class="ibox">
                                 <div class="ibox-title">
                                     <h5>Users</h5>
-                                    <div class="ibox-tools">
+                                    <div class="ibox-tools d-flex align-items-center gap-2">
+                                        <button class="btn btn-sm btn-default" id="toggleInactiveBtn" onclick="toggleInactive()">
+                                            <i class="fa fa-eye-slash"></i> Show Inactive
+                                        </button>
+                                        <input type="text" class="form-control form-control-sm" id="searchUsers"
+                                               placeholder="Search name, email, provider..."
+                                               style="width: 220px; display: inline-block;">
                                         <select class="form-control form-control-sm" id="filterUserType" style="width: 150px; display: inline-block;">
                                             <option value="">All Types</option>
                                             <?php if ($canCreateAdmin): ?>
@@ -255,6 +265,8 @@ $canCreateAdmin = ($userType === 'super_user');
                                             <tr>
                                                 <th>Name</th>
                                                 <th>Email</th>
+                                                <th>Type</th>
+                                                <th>Provider</th>
                                                 <th>Status</th>
                                                 <th>Created</th>
                                                 <th>Actions</th>
@@ -262,7 +274,7 @@ $canCreateAdmin = ($userType === 'super_user');
                                             </thead>
                                             <tbody id="usersTableBody">
                                             <tr>
-                                                <td colspan="5" class="text-center">
+                                                <td colspan="7" class="text-center">
                                                     <i class="fa fa-spinner fa-spin"></i> Loading users...
                                                 </td>
                                             </tr>
@@ -394,6 +406,21 @@ $canCreateAdmin = ($userType === 'super_user');
                                 <input type="password" class="form-control" name="password" id="editUserPassword" minlength="8">
                                 <small class="form-text text-muted">Leave blank to keep current password</small>
                             </div>
+
+                            <?php if ($userType === 'super_user'): ?>
+                            <div class="form-group" id="affiliationGroup" style="display:none;">
+                                <label>Affiliated SLP <span class="text-muted">(End Users only)</span></label>
+                                <select class="form-control" name="slp_affiliation" id="editUserAffiliation">
+                                    <option value="">— None (Super User) —</option>
+                                    <?php foreach ($slpList as $slp): ?>
+                                    <option value="<?= htmlspecialchars($slp['UserUUID']) ?>">
+                                        <?= htmlspecialchars($slp['Name']) ?>
+                                    </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <small class="form-text text-muted">Assigning an SLP gives them billing credit for this patient.</small>
+                            </div>
+                            <?php endif; ?>
                         </form>
                     </div>
                     <div class="modal-footer">
@@ -439,8 +466,9 @@ $canCreateAdmin = ($userType === 'super_user');
         <div class="modal fade" id="inviteUserModal" tabindex="-1">
             <div class="modal-dialog">
                 <div class="modal-content">
+                    <?php $inviteeLabel = ($userType === 'super_user') ? 'SLP/Patient' : 'Patient'; ?>
                     <div class="modal-header">
-                        <h5 class="modal-title"><i class="fa fa-envelope"></i> Invite Patient/Client</h5>
+                        <h5 class="modal-title"><i class="fa fa-envelope"></i> Invite <?= $inviteeLabel ?></h5>
                         <button type="button" class="close" onclick="$('#inviteUserModal').modal('hide')">
                             <span aria-hidden="true">&times;</span>
                         </button>
@@ -451,27 +479,27 @@ $canCreateAdmin = ($userType === 'super_user');
 
                         <div class="alert alert-info mb-3">
                             <i class="fa fa-info-circle"></i>
-                            <strong>How it works:</strong> Send an invitation email to your patient.
+                            <strong>How it works:</strong> Send an invitation email to your <?= $inviteeLabel ?>.
                             They'll receive a link to create their account and will be automatically affiliated with you.
                         </div>
 
                         <form id="inviteUserForm">
                             <div class="form-group">
-                                <label>Patient Name</label>
-                                <input type="text" class="form-control" name="patient_name" placeholder="Enter patient's name (optional)">
+                                <label><?= $inviteeLabel ?> Name</label>
+                                <input type="text" class="form-control" name="patient_name" placeholder="Enter <?= strtolower($inviteeLabel) ?>'s name (optional)">
                                 <small class="form-text text-muted">Optional - helps personalize the invite email</small>
                             </div>
 
                             <div class="form-group">
-                                <label>Patient Email <span class="text-danger">*</span></label>
-                                <input type="email" class="form-control" name="patient_email" placeholder="patient@example.com" required>
+                                <label><?= $inviteeLabel ?> Email <span class="text-danger">*</span></label>
+                                <input type="email" class="form-control" name="patient_email" placeholder="<?= strtolower($inviteeLabel) ?>@example.com" required>
                                 <small class="form-text text-muted">Where the invitation will be sent</small>
                             </div>
 
                             <div class="alert alert-warning">
                                 <small>
                                     <i class="fa fa-exclamation-triangle"></i>
-                                    The invite link will expire in 7 days. Patient must accept the invite to be affiliated with you.
+                                    The invite link will expire in 7 days. <?= $inviteeLabel ?> must accept the invite to be affiliated with you.
                                 </small>
                             </div>
                         </form>
@@ -489,7 +517,7 @@ $canCreateAdmin = ($userType === 'super_user');
         <script src="plugins/bootstrap/js/bootstrap.bundle.min.js"></script>
         <script src="plugins/metismenu/js/metisMenu.min.js"></script>
         <script src="plugins/toastr/js/toastr.min.js"></script>
-        <script src="js/inspinia.js"></script>
+        <script src="js/inspinia.js?v=<?= ASSET_VER ?>"></script>
         <script src="https://js.stripe.com/v3/"></script>
 
         <script>
@@ -519,23 +547,58 @@ $canCreateAdmin = ($userType === 'super_user');
                 $('#createUserModal').modal('show');
             }
 
+            let allUsers = [];
+            let showInactive = false;
+
             function loadUsers() {
-                const userType = $('#filterUserType').val();
-
-                let url = '/dashboards/api/admin/list_users.php?';
-                if (userType) url += 'user_type=' + userType;
-
-                $.get(url, function(data) {
+                $.get('/dashboards/api/admin/list_users.php', function(data) {
                     if (data.status === 'success') {
-                        renderUsers(data.users);
+                        allUsers = data.users;
+                        applyFilters();
                     } else {
                         toastr.error('Failed to load users');
-                        $('#usersTableBody').html('<tr><td colspan="5" class="text-center text-danger">Failed to load users</td></tr>');
+                        $('#usersTableBody').html('<tr><td colspan="7" class="text-center text-danger">Failed to load users</td></tr>');
                     }
                 }).fail(function() {
                     toastr.error('Network error loading users');
-                    $('#usersTableBody').html('<tr><td colspan="5" class="text-center text-danger">Network error</td></tr>');
+                    $('#usersTableBody').html('<tr><td colspan="7" class="text-center text-danger">Network error</td></tr>');
                 });
+            }
+
+            function toggleInactive() {
+                showInactive = !showInactive;
+                const btn = $('#toggleInactiveBtn');
+                if (showInactive) {
+                    btn.html('<i class="fa fa-eye-slash"></i> Hide Inactive').removeClass('btn-default').addClass('btn-warning');
+                } else {
+                    btn.html('<i class="fa fa-eye-slash"></i> Show Inactive').removeClass('btn-warning').addClass('btn-default');
+                }
+                applyFilters();
+            }
+
+            function isActiveUser(user) {
+                const s = (user.Status || '').toLowerCase();
+                return s === 'active' || s === 'trial';
+            }
+
+            function applyFilters() {
+                const typeFilter = $('#filterUserType').val().toLowerCase();
+                const search = $('#searchUsers').val().toLowerCase().trim();
+
+                const filtered = allUsers.filter(user => {
+                    if (!showInactive && !isActiveUser(user)) return false;
+                    if (typeFilter && user.user_type !== typeFilter) return false;
+                    if (!search) return true;
+                    const haystack = [
+                        user.Name || '',
+                        user.Email || '',
+                        user.user_type === 'enterprise_admin' ? 'slp' : 'end user',
+                        user.provider_name || ''
+                    ].join(' ').toLowerCase();
+                    return haystack.includes(search);
+                });
+
+                renderUsers(filtered);
             }
 
             function renderUsers(users) {
@@ -543,18 +606,24 @@ $canCreateAdmin = ($userType === 'super_user');
                 tbody.empty();
 
                 if (users.length === 0) {
-                    tbody.html('<tr><td colspan="5" class="text-center text-muted">No users found</td></tr>');
+                    tbody.html('<tr><td colspan="7" class="text-center text-muted">No users found</td></tr>');
                     return;
                 }
 
                 users.forEach(user => {
                     const statusBadge = getStatusBadge(user);
                     const createdDate = new Date(user.CreatedAt).toLocaleDateString();
+                    const typLabel = user.user_type === 'enterprise_admin' ? 'SLP' : 'End User';
+                    const providerCell = user.user_type === 'end_user'
+                        ? escapeHtml(user.provider_name || '—')
+                        : '—';
 
                     const row = `
                 <tr>
                     <td><strong>${escapeHtml(user.Name)}</strong></td>
                     <td>${escapeHtml(user.Email)}</td>
+                    <td>${typLabel}</td>
+                    <td>${providerCell}</td>
                     <td>${statusBadge}</td>
                     <td>${createdDate}</td>
                     <td>
@@ -569,6 +638,14 @@ $canCreateAdmin = ($userType === 'super_user');
             `;
                     tbody.append(row);
                 });
+
+                // Mobile: hide non-essential columns, add Details expand button
+                if (window.MKAMobile && MKAMobile.isMobile()) {
+                    MKAMobile.initTable(document.getElementById('usersTable'), {
+                        titleCol : 0,        // Name column stays visible
+                        hideCols : [1, 3, 5] // Hide Email, Provider, Created on mobile
+                    });
+                }
             }
 
             function getUserTypeBadge(userType) {
@@ -650,7 +727,6 @@ $canCreateAdmin = ($userType === 'super_user');
             }
 
             function editUser(userUuid) {
-                // Load user data and show modal
                 $.get('/dashboards/api/admin/get_user.php?user_uuid=' + userUuid, function(data) {
                     if (data.status === 'success') {
                         const user = data.user;
@@ -659,6 +735,16 @@ $canCreateAdmin = ($userType === 'super_user');
                         $('#editUserEmail').val(user.Email);
                         $('#editUserPassword').val('');
                         $('#editUserError').hide();
+
+                        // Show affiliation field only for super_user editing an end_user
+                        const affGroup = $('#affiliationGroup');
+                        if (affGroup.length && user.user_type === 'end_user') {
+                            $('#editUserAffiliation').val(user.current_slp_uuid || '');
+                            affGroup.show();
+                        } else if (affGroup.length) {
+                            affGroup.hide();
+                        }
+
                         $('#editUserModal').modal('show');
                     } else {
                         toastr.error('Failed to load user data');
@@ -675,6 +761,12 @@ $canCreateAdmin = ($userType === 'super_user');
                         formData[field.name] = field.value;
                     }
                 });
+
+                // Always send slp_affiliation if the field is visible (empty = remove affiliation)
+                const affGroup = $('#affiliationGroup');
+                if (affGroup.length && affGroup.is(':visible')) {
+                    formData.slp_affiliation = $('#editUserAffiliation').val();
+                }
 
                 $.ajax({
                     url: '/dashboards/api/admin/update_user.php',
@@ -743,8 +835,8 @@ $canCreateAdmin = ($userType === 'super_user');
             $(document).ready(function() {
                 loadUsers();
 
-                // Reload on filter change
-                $('#filterUserType').on('change', loadUsers);
+                $('#filterUserType').on('change', applyFilters);
+                $('#searchUsers').on('input', applyFilters);
             });
 
 

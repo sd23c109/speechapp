@@ -12,10 +12,9 @@ $userType = $stmt->fetchColumn();
     <li class="nav-header">Administration</li>
     <li><a href="admin_users.php"><i class="fa fa-users"></i> Manage Users</a></li>
     <li><a href="admin_content.php"><i class="fa fa-book"></i> Manage Content</a></li>
-    <?php if ($userType === 'super_user'): ?>
-        <li><a href="admin_pricing.php"><i class="fa fa-dollar-sign"></i> Set Pricing</a></li>
-    <?php endif; ?>
 <?php endif; ?>
 
-
-
+<?php if ($userType === 'super_user'): ?>
+    <li class="nav-header">Legal</li>
+    <li><a href="terms_of_use.php"><i class="fa fa-file-text-o"></i> Terms of Use</a></li>
+<?php endif; ?>

@@ -13,7 +13,7 @@ class MediaManagement {
 
     const MAX_VIDEO_SIZE = 10 * 1024 * 1024; // 10MB
     const MAX_IMAGE_SIZE = 5 * 1024 * 1024;  // 5MB
-    const MAX_VIDEO_DURATION = 5; // 5 seconds
+    const MAX_VIDEO_DURATION = 10; // 10 seconds
 
     const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
     const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -108,8 +108,8 @@ class MediaManagement {
         $mediaName = trim($mediaInfo['media_name'] ?? '');
 
         // For videos: use provided values; for images: set to NULL
-        $allowSound = $isVideo ? (bool)($mediaInfo['allow_sound'] ?? true) : null;
-        $autoplayLoop = $isVideo ? (bool)($mediaInfo['autoplay_loop'] ?? false) : null;
+        $allowSound   = $isVideo ? (int)(bool)($mediaInfo['allow_sound']   ?? true)  : null;
+        $autoplayLoop = $isVideo ? (int)(bool)($mediaInfo['autoplay_loop'] ?? false) : null;
 
         if (empty($mediaName) || strlen($mediaName) > 255) {
             return ['status' => 'fail', 'message' => 'Invalid media name'];

@@ -21,6 +21,10 @@ if (!headers_sent()) {
     header("Pragma: no-cache");
 }
 
+if (!defined('ASSET_VER')) {
+    define('ASSET_VER', filemtime('/opt/mka/public/css/style.min.css') ?: time());
+}
+
 /**
  * FIXED PATH:
  * Because _init.php lives under /public/dashboards/,
@@ -118,7 +122,7 @@ if ($user_uuid) {
      * Load basic user info
      */
     $stmt = $GLOBALS['pdo']->prepare("
-        SELECT UserUUID, Email, Name, Domain, company_name, company_slug, TrialExpires, CreatedAt, Status, IsPaid, user_type
+        SELECT UserUUID, Email, Name, Domain, company_name, company_slug, TrialExpires, CreatedAt, Status, IsPaid, user_type, avatar
         FROM mka_users
         WHERE UserUUID = ?
         LIMIT 1
@@ -128,8 +132,8 @@ if ($user_uuid) {
 
     if (!empty($userData)) {
         $_SESSION['user_data']['user_info'] = $userData;
-        // Make sure user_type is in session
         $_SESSION['user_data']['user_type'] = $userData['user_type'];
+        $_SESSION['user_data']['avatar']    = !empty($userData['avatar']) ? $userData['avatar'] : null;
     } else {
         header("Location: /dashboards/logout.php");
         exit;

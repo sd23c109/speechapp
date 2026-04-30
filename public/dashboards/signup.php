@@ -39,6 +39,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link href="css/vendors.min.css" rel="stylesheet" type="text/css">
     <link href="css/app.min.css" rel="stylesheet" type="text/css">
     <link href="plugins/toastr/css/toastr.min.css" rel="stylesheet">
+    <!-- Mobile responsive overrides -->
+    <link href="css/mobile.css" rel="stylesheet" type="text/css">
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -141,7 +143,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         <label class="form-label">Start with:</label><br>
                                         <div class="mb-2">
                                             <div class="form-check form-check-inline">
-                                                <input type="radio" class="form-check-input" name="start_mode" id="startTrial" value="trial" checked>
+                                                <input type="radio" class="form-check-input" name="start_mode" id="startTrial" value="trial">
                                                 <label class="form-check-label" for="startTrial">Start 14 Day Trial</label>
                                             </div>
                                             <div class="form-check form-check-inline">
@@ -151,24 +153,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         </div>
                                     </div>
 
-                                    <!-- Only show plan selection when paying -->
+                                    <!-- Hidden until start_mode is selected -->
                                     <div class="mb-3" id="planSelection" style="display:none;">
-                                        <label class="form-label">I am a:</label><br>
+                                        <label class="form-label" id="planSelectionLabel">I am a:</label><br>
                                         <div class="mb-2">
                                             <div class="form-check form-check-inline">
-                                                <input type="radio" class="form-check-input" name="user_type" id="typePatient" value="end_user" checked>
-                                                <label class="form-check-label" for="typePatient">Patient/Parent ($10/month)</label>
+                                                <input type="radio" class="form-check-input" name="user_type" id="typePatient" value="end_user">
+                                                <label class="form-check-label" for="typePatient" id="labelPatient">Patient / Parent</label>
                                             </div>
                                             <div class="form-check form-check-inline">
                                                 <input type="radio" class="form-check-input" name="user_type" id="typeSLP" value="enterprise_admin">
-                                                <label class="form-check-label" for="typeSLP">Speech Therapist/SLP ($100/month)</label>
+                                                <label class="form-check-label" for="typeSLP" id="labelSLP">Speech Therapist / SLP</label>
                                             </div>
                                         </div>
                                     </div>
 
-                                    <div class="d-grid" id="startButtons">
-                                        <button type="submit" class="btn btn-primary fw-semibold py-2">Start Trial</button>
-                                    </div>
+                                    <!-- Hidden until both selections made -->
+                                    <div class="d-grid" id="startButtons" style="display:none !important;"></div>
                                 </form>
 
                                 <p class="text-muted text-center mt-4 mb-0">
@@ -211,7 +212,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <script src="https://js.stripe.com/v3/"></script>
 
 <script>
-    const stripe = Stripe('<?= StripeConfig::getPublishableKey() ?>');
+    let _stripe = null;
+    function getStripe() {
+        if (!_stripe) {
+            const key = '<?= StripeConfig::getPublishableKey() ?>';
+            if (!key) throw new Error('Payment is not configured. Please contact support.');
+            _stripe = Stripe(key);
+        }
+        return _stripe;
+    }
 
     // Password validation
     document.querySelector('form').addEventListener('submit', function(e) {
@@ -225,22 +234,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     });
 
-    // Toggle between trial and paid
+    // Step 1: start_mode selection reveals user_type options
     document.querySelectorAll('input[name="start_mode"]').forEach(el => {
         el.addEventListener('change', function() {
-            const container = document.getElementById('startButtons');
-            const planSelection = document.getElementById('planSelection');
+            const isTrial = (this.value === 'trial');
 
-            if (this.id === 'startTrial') {
-                planSelection.style.display = 'none';
+            // Update labels
+            document.getElementById('labelPatient').textContent = isTrial ? 'Patient / Parent' : 'Patient / Parent ($10/month)';
+            document.getElementById('labelSLP').textContent     = isTrial ? 'Speech Therapist / SLP' : 'Speech Therapist / SLP ($100/month)';
+
+            // Uncheck any previously selected user_type and show the section
+            document.querySelectorAll('input[name="user_type"]').forEach(r => r.checked = false);
+            document.getElementById('planSelection').style.display = 'block';
+
+            // Hide button until user_type is also chosen
+            document.getElementById('startButtons').style.display = 'none';
+        });
+    });
+
+    // Step 2: user_type selection reveals the submit button
+    document.querySelectorAll('input[name="user_type"]').forEach(el => {
+        el.addEventListener('change', function() {
+            const startMode = document.querySelector('input[name="start_mode"]:checked')?.value;
+            if (!startMode) return;
+
+            const container = document.getElementById('startButtons');
+            container.style.display = 'block';
+
+            if (startMode === 'trial') {
                 container.innerHTML = `<button type="submit" class="btn btn-primary fw-semibold py-2">Start Trial</button>`;
             } else {
-                planSelection.style.display = 'block';
                 container.innerHTML = `
-                <button type="button" class="btn btn-primary fw-semibold py-2" id="payNowTrigger" disabled>
-                    Subscribe Now
-                </button>
-            `;
+                    <button type="button" class="btn btn-primary fw-semibold py-2" id="payNowTrigger" disabled>
+                        Subscribe Now
+                    </button>`;
                 validateSignupFields();
             }
         });
@@ -326,7 +353,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 .then(data => {
                     if (data.session_id) {
                         // Redirect to Stripe Checkout
-                        return stripe.redirectToCheckout({ sessionId: data.session_id });
+                        return getStripe().redirectToCheckout({ sessionId: data.session_id });
                     } else {
                         throw new Error(data.message || 'Failed to create checkout session');
                     }

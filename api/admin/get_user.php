@@ -60,4 +60,15 @@ if (!$canView) {
     exit;
 }
 
+// For super_users viewing an end_user, include the active SLP affiliation
+if ($requestingUserType === 'super_user' && $user['user_type'] === 'end_user') {
+    $affStmt = $GLOBALS['pdo']->prepare("
+        SELECT slp_uuid FROM patient_affiliations
+        WHERE patient_uuid = ? AND status = 'active'
+        LIMIT 1
+    ");
+    $affStmt->execute([$targetUserUuid]);
+    $user['current_slp_uuid'] = $affStmt->fetchColumn() ?: '';
+}
+
 echo json_encode(['status' => 'success', 'user' => $user]);

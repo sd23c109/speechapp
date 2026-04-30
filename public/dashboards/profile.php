@@ -2,10 +2,13 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
-$GLOBALS['current_dashboard'] = 'formbuilder';
+$GLOBALS['current_dashboard'] = 'speechapp';
 include('../../dashboards/_init.php');
 include('_menu_loader.php');
-error_log(json_encode($_SESSION));
+
+require_once '/opt/mka/vendor/autoload.php';
+require_once '/opt/mka/core/Payment/StripeConfig.php';
+$stripePublishableKey = \MKA\Payment\StripeConfig::getPublishableKey();
 
 ?>
 
@@ -37,18 +40,23 @@ error_log(json_encode($_SESSION));
     <!-- Animate.css -->
     <link href="plugins/animate/css/animate.min.css" rel="stylesheet">
     
-    <!-- Formbuilder -->
-    <script src="plugins/jquery/js/jquery.min.js"></script>
-    <link rel="stylesheet" href="/mka-assets/formbuilder/form-builder.min.css">
-    <script src="/mka-assets/formbuilder/form-builder.min.js"></script>
-    <script src="/mka-assets/formbuilder/form-render.min.js"></script>
-
 
     <!-- Style css -->
-    <link href="css/style.min.css" rel="stylesheet" type="text/css">
+    <link href="css/style.min.css?v=<?= ASSET_VER ?>" rel="stylesheet" type="text/css">
 
     <!-- Head.js -->
     <script src="js/head.js"></script>
+    <!-- Stripe -->
+    <script src="https://js.stripe.com/v3/"></script>
+    <style>
+        .plan-card { border: 2px solid #dee2e6; border-radius: .75rem; padding: 1.25rem; cursor: pointer; transition: border-color .15s, box-shadow .15s; background: #fff; }
+        .plan-card:hover { border-color: #0d6efd; }
+        .plan-card.selected { border-color: #0d6efd; box-shadow: 0 0 0 3px rgba(13,110,253,.15); }
+        .plan-price { font-size: 2rem; font-weight: 700; color: #0d6efd; }
+        .feature-check { color: #198754; margin-right: 6px; }
+        #oc-card-element { padding: 12px; border: 1px solid #dee2e6; border-radius: .375rem; background: white; }
+        #oc-card-errors { color: #dc3545; margin-top: 6px; font-size: .875rem; }
+    </style>
 </head>
 
 <body>
@@ -74,57 +82,95 @@ error_log(json_encode($_SESSION));
          
             
             </div>
+            <?php
+                $avatarSrc   = !empty($_SESSION['user_data']['avatar']) ? htmlspecialchars($_SESSION['user_data']['avatar']) : 'img/favicon.ico';
+                $userName    = htmlspecialchars($_SESSION['user_data']['user_info']['Name'] ?? '');
+                $company     = htmlspecialchars($_SESSION['user_data']['user_info']['company_name'] ?? '');
+                $isSLP       = in_array($_SESSION['user_data']['user_type'] ?? '', ['enterprise_admin', 'super_user']);
+                $memberSince = htmlspecialchars($_SESSION['user_data']['user_info']['CreatedAt'] ?? '');
+                $defaultPlan = $isSLP ? 'slp' : 'patient';
+                $userEmail   = htmlspecialchars($_SESSION['user_data']['user_info']['Email'] ?? '');
+            ?>
+
+            <!-- Profile header bar -->
             <div class="card-body" style="padding:10px;">
                 <div class="d-flex justify-content-between align-items-center flex-wrap p-3 bg-white rounded shadow-sm">
-
-                    <!-- Left Section: Avatar + Name + Company -->
                     <div class="d-flex align-items-center gap-3 mb-2 mb-md-0">
-                        <div class="avatar avatar-xxl">
-                            <img src="img/favicon.ico" alt="avatar-2" class="img-fluid img-thumbnail rounded-circle">
-                        </div>
+                        <img id="headerAvatarPreview"
+                             src="<?= $avatarSrc ?>"
+                             alt="avatar"
+                             class="rounded-circle"
+                             style="width:64px;height:64px;object-fit:cover;border:2px solid #dee2e6;">
                         <div>
-                            <h4 class="text-nowrap fw-bold mb-1">
-                                <?= htmlspecialchars($_SESSION['user_data']['user_info']['Name']) ?>
-                            </h4>
-                            <p class="text-muted mb-1">
-                                <?= htmlspecialchars($_SESSION['user_data']['user_info']['company_name']) ?>
-                            </p>
+                            <h4 class="fw-bold mb-1" id="headerName"><?= $userName ?></h4>
+                            <?php if ($isSLP && $company !== ''): ?>
+                            <p class="text-muted mb-1" id="headerCompany"><?= $company ?></p>
+                            <?php else: ?>
+                            <p class="text-muted mb-1" id="headerCompany" style="display:none"></p>
+                            <?php endif; ?>
                             <span class="badge bg-soft-primary text-primary fw-medium fs-xs">
-                                Member Since: <?= htmlspecialchars($_SESSION['user_data']['user_info']['CreatedAt']) ?>
+                                Member Since: <?= $memberSince ?>
                             </span>
                         </div>
                     </div>
-
-                    <!-- Right Section: Buttons -->
                     <div class="d-flex gap-2">
-                     <!-- Upgrade Button -->
-                     <?php
-                       if ($_SESSION['user_data']['user_info']['Status'] == 'y') {
-                     ?>
-                           <button type="button" class="btn btn-outline-success" id="payNowTrigger" data-bs-toggle="offcanvas" data-bs-target="#SignUpPayNow">
-                           Upgrade Plan
-                           </button>
-                     <?php
-                       } else {
-                       
-                     ?>
-                          <button type="button" class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#upgradeModal">
-                            Upgrade Plan
-                          </button>
-                     <?php
-                       }
-                     ?>
-                        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#downgradeModal">
-                            Downgrade Plan
-                          </button>
-                         <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#cancelModal">
-                            Cancel Plan
-                          </button>
-                       
+                        <button type="button" class="btn btn-outline-success" data-bs-toggle="offcanvas" data-bs-target="#upgradeOffcanvas">Upgrade Plan</button>
+                        <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#cancelModal">Cancel Plan</button>
                     </div>
-
                 </div>
+            </div>
 
+            <!-- Edit Profile card -->
+            <div class="row mx-2 mt-3">
+                <div class="col-lg-6 col-12">
+                    <div class="card shadow-sm">
+                        <div class="card-header bg-white">
+                            <h5 class="mb-0">Edit Profile</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="d-flex align-items-start gap-4">
+
+                                <!-- Avatar upload -->
+                                <div class="text-center" style="min-width:110px;">
+                                    <div class="position-relative d-inline-block" style="cursor:pointer;" onclick="document.getElementById('avatarInput').click();" title="Click to change photo">
+                                        <img id="avatarPreview"
+                                             src="<?= $avatarSrc ?>"
+                                             data-original="<?= $avatarSrc ?>"
+                                             alt="avatar"
+                                             class="rounded-circle"
+                                             style="width:100px;height:100px;object-fit:cover;border:2px solid #dee2e6;">
+                                        <div class="position-absolute bottom-0 end-0 bg-primary rounded-circle d-flex align-items-center justify-content-center" style="width:26px;height:26px;">
+                                            <i class="fa fa-camera text-white" style="font-size:12px;"></i>
+                                        </div>
+                                        <input type="file" id="avatarInput" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none;">
+                                    </div>
+                                    <div class="text-muted small mt-2">Click to change photo</div>
+                                </div>
+
+                                <!-- Profile fields -->
+                                <div class="flex-grow-1">
+                                    <form id="profileForm">
+                                        <div class="mb-3">
+                                            <label for="profileName" class="form-label fw-semibold">Display Name</label>
+                                            <input type="text" class="form-control" id="profileName" name="name"
+                                                   value="<?= $userName ?>" maxlength="100" required>
+                                        </div>
+                                        <?php if ($isSLP): ?>
+                                        <div class="mb-3">
+                                            <label for="profileCompany" class="form-label fw-semibold">Practice / Company Name</label>
+                                            <input type="text" class="form-control" id="profileCompany" name="company_name"
+                                                   value="<?= $company ?>" maxlength="100"
+                                                   placeholder="e.g. Springfield Speech Clinic">
+                                        </div>
+                                        <?php endif; ?>
+                                        <button type="submit" class="btn btn-primary px-4">Save Changes</button>
+                                    </form>
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
         
@@ -136,252 +182,269 @@ error_log(json_encode($_SESSION));
         </div>
     </div>
     
-    <?php
-$currentTier = strtolower($_SESSION['user_data']['plan_name']) ?? 'pro'; 
-$availablePlans = [
-    'starter' => 'Starter (1 Form)',
-    'lite' => 'Lite (10 Forms)',
-    'standard' => 'Standard (25 Forms)',
-    'pro' => 'Pro (Unlimited Forms)'
-];
-$planOrder = ['starter', 'lite', 'standard', 'pro'];
-?>
- <!--Downgrade Modal-->
-<div class="modal fade" id="downgradeModal" tabindex="-1" aria-labelledby="downgradeModalLabel" aria-hidden="true">
+<!-- Cancel Plan Modal -->
+<div class="modal fade" id="cancelModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
-      <div class="modal-header">
-        <h3 class="modal-title" id="downgradeModalLabel">Select Downgrade Plan</h3>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title text-danger"><i class="fa fa-triangle-exclamation me-2"></i>Cancel Subscription?</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-      <div class="modal-body">
-        <form id="downgradeForm" action="/dashboards/actions/downgrade_plan.php" method="post">
-          <input type="hidden" name="subscription_id" value="<?= htmlspecialchars($_SESSION['user_data']['subscription_id']) ?>">
-          
-          
-          <?php foreach ($planOrder as $plan): ?>
-              <?php
-              // Disable if current or higher plan
-              $disabled = (array_search($plan, $planOrder) >= array_search($currentTier, $planOrder)) ? 'disabled' : '';
-              ?>
-              <div class="form-check mb-2">
-                <input class="form-check-input" type="radio" name="new_tier" id="plan_<?= $plan ?>" value="<?= $plan ?>" <?= $disabled ?>>
-                <label class="form-check-label <?= $disabled ? 'text-muted' : '' ?>" for="plan_<?= $plan ?>">
-                  <?= $availablePlans[$plan] ?> <?= $disabled ? '(Not available)' : '' ?>
-                </label>
-              </div>
-          <?php endforeach; ?>
-          
-        </form>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="submit" class="btn btn-danger" form="downgradeForm">Confirm Downgrade</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="modal fade" id="upgradeModal" tabindex="-1" aria-labelledby="upgradeModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <form id="upgradeForm" action="/dashboards/actions/upgrade_plan.php" method="post">
-        <div class="modal-header">
-          <h5 class="modal-title">Select a Plan to Upgrade To</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <input type="hidden" name="subscription_id" value="<?= htmlspecialchars($_SESSION['user_data']['subscription_id']) ?>">
-
-          <?php foreach ($planOrder as $plan): ?>
-            <?php
-              $disabled = (array_search($plan, $planOrder) <= array_search($currentTier, $planOrder)) ? 'disabled' : '';
-              $labelClass = $disabled ? 'text-muted' : '';
-             
-                  
-                  
-            ?>
-            <div class="form-check mb-2">
-              <input class="form-check-input" type="radio" name="new_tier" id="upgrade_<?= $plan ?>" value="<?= $plan ?>" <?= $disabled ?>>
-              <label class="form-check-label <?= $labelClass ?>" for="upgrade_<?= $plan ?>">
-                <?= $availablePlans[$plan] ?> <?= $disabled ? '(Not available)' : '' ?>
-              </label>
-            </div>
-          <?php endforeach; ?>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-success">Confirm Upgrade</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
-<!--Cancel Modal-->
-<div class="modal fade" id="cancelModal" tabindex="-1" aria-labelledby="cancelModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="downgradeModalLabel">Cancel Plan?</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <form id="cancelForm" action="/dashboards/actions/cancel_plan.php" method="post">
-        <input type="hidden" name="subscription_id" value="<?= htmlspecialchars($_SESSION['user_data']['subscription_id']) ?>"> 
-        </form>
-        <p>Are you sure?</p>
+      <div class="modal-body pt-2">
+        <p class="mb-1">Your subscription will be cancelled immediately and you will lose access to your account.</p>
+        <p class="text-muted small mb-0">You can subscribe again at any time.</p>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Go Back</button>
-        <button type="submit" class="btn btn-danger" form="cancelForm">Confirm Cancellation</button>
+        <button type="button" class="btn btn-danger" id="confirmCancelBtn">
+            <span id="cancelBtnText">Yes, Cancel My Plan</span>
+            <span id="cancelSpinner" class="spinner-border spinner-border-sm d-none" role="status"></span>
+        </button>
       </div>
     </div>
   </div>
 </div>
 
-  <div class="offcanvas offcanvas-end overflow-hidden" tabindex="-1" id="SignUpPayNow" aria-modal="true" role="dialog">
-        <div class="d-flex justify-content-between text-bg-primary gap-2 p-3" style="background-image: url(images/user-bg-pattern.png);">
-            <input type="hidden" name="user_uuid" id="user_uuid" value="<?=$_SESSION['user_data']['user_uuid']?>">
-            <div>
-              <h4 class="text-white fw-bold mb-0">Subscribe</h4>
-              <p class="text-white-50 mb-0">Click below to complete your subscription.</p>
-            </div>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+<!-- Upgrade Plan Offcanvas -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="upgradeOffcanvas" style="width:420px; max-width:100%;">
+    <div class="offcanvas-header text-white" style="background: linear-gradient(135deg,#0d6efd,#6610f2);">
+        <div>
+            <h5 class="offcanvas-title fw-bold mb-0">Choose Your Plan</h5>
+            <p class="mb-0 opacity-75 small">Secure, encrypted payment. Cancel anytime.</p>
         </div>
-         
-          <div class="offcanvas-body">
-         <div class="mb-3">
-              <label class="form-label fw-semibold">Choose a Monthly Plan:</label>
-
-              <div class="form-check mb-2">
-                <input type="radio" class="form-check-input" name="tier" id="tierStarter" value="starter" <?= ($defaultTier === 'starter' ? 'checked' : '') ?>>
-                <label class="form-check-label" for="tierStarter">
-                  Starter (2 forms): <strong>$6.99/mo</strong>
-                </label>
-              </div>
-
-              <div class="form-check mb-2">
-                <input type="radio" class="form-check-input" name="tier" id="tierLite" value="lite" <?= ($defaultTier === 'lite' ? 'checked' : '') ?>>
-                <label class="form-check-label" for="tierLite">
-                  Lite (10 forms): <strong>$12.99/mo</strong>
-                </label>
-              </div>
-
-              <div class="form-check mb-2">
-                <input type="radio" class="form-check-input" name="tier" id="tierStandard" value="standard" <?= ($defaultTier === 'standard' ? 'checked' : '') ?>>
-                <label class="form-check-label" for="tierStandard">
-                  Standard (20 forms): <strong>$17.99/mo</strong>
-                </label>
-              </div>
-
-              <div class="form-check mb-2">
-                <input type="radio" class="form-check-input" name="tier" id="tierPro" value="pro" <?= ($defaultTier === 'pro' ? 'checked' : '') ?>>
-                <label class="form-check-label" for="tierPro">
-                  Pro (40 forms): <strong>$29.99/mo</strong>
-                </label>
-              </div>
-            </div>
-
-            <div class="mb-3">
-              <div id="paypal-button-container"></div>
-            </div>
-            <p class="text-muted small fst-italic">You'll be charged after completing PayPal checkout. You can cancel anytime from your dashboard.</p>
-          </div>
-        
-        
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
     </div>
+    <div class="offcanvas-body px-4 py-3">
+
+        <!-- Plan cards -->
+        <p class="fw-semibold mb-2">Select your plan:</p>
+        <div class="row g-3 mb-4">
+            <div class="col-12">
+                <div class="plan-card <?= $defaultPlan === 'patient' ? 'selected' : '' ?>" id="oc-card-patient" onclick="ocSelectPlan('patient')">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div>
+                            <input class="plan-radio me-1" type="radio" name="oc_plan" id="oc-plan-patient" value="patient" <?= $defaultPlan === 'patient' ? 'checked' : '' ?>>
+                            <label class="fw-semibold" for="oc-plan-patient">Patient / Parent</label>
+                        </div>
+                        <?php if ($defaultPlan === 'patient'): ?>
+                            <span class="badge bg-primary" style="font-size:.7rem;">Recommended</span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="plan-price">$10<span class="fs-6 text-muted fw-normal">/mo</span></div>
+                    <ul class="list-unstyled mt-2 mb-0 small">
+                        <li><i class="fa fa-check feature-check"></i>Unlimited speech exercises</li>
+                        <li><i class="fa fa-check feature-check"></i>Progress tracking</li>
+                        <li><i class="fa fa-check feature-check"></i>All therapy modules</li>
+                        <li><i class="fa fa-check feature-check"></i>SLP connection support</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="col-12">
+                <div class="plan-card <?= $defaultPlan === 'slp' ? 'selected' : '' ?>" id="oc-card-slp" onclick="ocSelectPlan('slp')">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div>
+                            <input class="plan-radio me-1" type="radio" name="oc_plan" id="oc-plan-slp" value="slp" <?= $defaultPlan === 'slp' ? 'checked' : '' ?>>
+                            <label class="fw-semibold" for="oc-plan-slp">Speech-Language Pathologist</label>
+                        </div>
+                        <?php if ($defaultPlan === 'slp'): ?>
+                            <span class="badge bg-primary" style="font-size:.7rem;">Recommended</span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="plan-price">$100<span class="fs-6 text-muted fw-normal">/mo</span></div>
+                    <ul class="list-unstyled mt-2 mb-0 small">
+                        <li><i class="fa fa-check feature-check"></i>Manage unlimited patients</li>
+                        <li><i class="fa fa-check feature-check"></i>Custom exercise programs</li>
+                        <li><i class="fa fa-check feature-check"></i>Full analytics dashboard</li>
+                        <li><i class="fa fa-check feature-check"></i>Priority support</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stripe card element -->
+        <div class="mb-3">
+            <label class="form-label fw-semibold">Card Information <span class="text-danger">*</span></label>
+            <div id="oc-card-element"></div>
+            <div id="oc-card-errors" role="alert"></div>
+        </div>
+
+        <div class="alert alert-success py-2 mb-3">
+            <i class="fa fa-shield-halved me-1"></i>
+            <small>Secure, encrypted payment. Cancel anytime.</small>
+        </div>
+
+        <div class="d-grid">
+            <button type="button" id="oc-subscribe-btn" class="btn btn-primary btn-lg fw-semibold">
+                <span id="oc-btn-text">Subscribe for $<?= $defaultPlan === 'slp' ? '100' : '10' ?>/month</span>
+                <span id="oc-spinner" class="spinner-border spinner-border-sm d-none" role="status"></span>
+            </button>
+        </div>
+
+        <p class="text-muted text-center mt-3 mb-0 small">
+            By subscribing, you agree to our Terms of Service and Privacy Policy.
+        </p>
+    </div>
+</div>
 
 <script>
-['downgradeForm', 'upgradeForm', 'cancelForm'].forEach(id => {
-  document.getElementById(id).addEventListener('submit', function(e) {
-      
-      if (!document.querySelector(`#${id} input[name="new_tier"]:checked`) && id !== 'cancelForm') {
-          e.preventDefault();
-          alert('Please select a plan before confirming.');
-      }
-  });
+// ── Avatar upload ────────────────────────────────────────────────────────────
+document.getElementById('avatarInput').addEventListener('change', function() {
+    const file = this.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = e => {
+        document.getElementById('avatarPreview').src = e.target.result;
+        document.getElementById('headerAvatarPreview').src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+
+    const formData = new FormData();
+    formData.append('avatar', file);
+
+    fetch('api/admin/update_avatar.php', { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'ok') {
+                toastr.success('Profile photo updated!');
+                const url = data.avatar_url + '?t=' + Date.now();
+                document.querySelectorAll('.profile-element img.rounded-circle').forEach(img => img.src = url);
+            } else {
+                toastr.error(data.message || 'Upload failed');
+                const orig = document.getElementById('avatarPreview').dataset.original;
+                document.getElementById('avatarPreview').src = orig;
+                document.getElementById('headerAvatarPreview').src = orig;
+            }
+        })
+        .catch(() => toastr.error('Upload failed'));
+});
+
+// ── Profile form save ────────────────────────────────────────────────────────
+document.getElementById('profileForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    fetch('api/admin/update_profile.php', { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'ok') {
+                toastr.success('Profile updated!');
+                document.getElementById('headerName').textContent = data.name;
+                const companyEl    = document.getElementById('headerCompany');
+                const companyInput = document.getElementById('profileCompany');
+                if (companyEl && companyInput) {
+                    const val = companyInput.value.trim();
+                    companyEl.textContent = val;
+                    companyEl.style.display = val ? '' : 'none';
+                }
+            } else {
+                toastr.error(data.message || 'Save failed');
+            }
+        })
+        .catch(() => toastr.error('Save failed'));
+});
+
+// ── Cancel plan ──────────────────────────────────────────────────────────────
+document.getElementById('confirmCancelBtn').addEventListener('click', function() {
+    const btn     = this;
+    const text    = document.getElementById('cancelBtnText');
+    const spinner = document.getElementById('cancelSpinner');
+    btn.disabled  = true;
+    text.classList.add('d-none');
+    spinner.classList.remove('d-none');
+
+    fetch('api/admin/cancel_subscription.php', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'ok') {
+                toastr.options = { positionClass: 'toast-top-center', timeOut: 3000, onHidden: () => window.location.href = '/dashboards/logout.php' };
+                toastr.success('Subscription cancelled. Logging you out…');
+            } else {
+                toastr.error(data.message || 'Cancellation failed. Please contact support.');
+                btn.disabled = false;
+                text.classList.remove('d-none');
+                spinner.classList.add('d-none');
+            }
+        })
+        .catch(() => {
+            toastr.error('Network error. Please try again.');
+            btn.disabled = false;
+            text.classList.remove('d-none');
+            spinner.classList.add('d-none');
+        });
+});
+
+// ── Stripe upgrade ───────────────────────────────────────────────────────────
+const ocPlanPrices = { patient: '$10', slp: '$100' };
+let ocSelectedPlan = '<?= $defaultPlan ?>';
+
+function ocSelectPlan(plan) {
+    document.querySelectorAll('.plan-card').forEach(c => c.classList.remove('selected'));
+    document.getElementById('oc-card-' + plan).classList.add('selected');
+    document.getElementById('oc-plan-' + plan).checked = true;
+    ocSelectedPlan = plan;
+    document.getElementById('oc-btn-text').textContent = 'Subscribe for ' + ocPlanPrices[plan] + '/month';
+}
+
+const stripe      = Stripe('<?= htmlspecialchars($stripePublishableKey) ?>');
+const ocElements  = stripe.elements();
+const ocCardEl    = ocElements.create('card', {
+    style: {
+        base: { fontSize: '16px', color: '#32325d', fontFamily: '"Inter", sans-serif', '::placeholder': { color: '#aab7c4' } },
+        invalid: { color: '#dc3545' }
+    }
+});
+
+// Mount card element when offcanvas opens (avoids mounting to hidden element)
+document.getElementById('upgradeOffcanvas').addEventListener('shown.bs.offcanvas', function() {
+    ocCardEl.mount('#oc-card-element');
+});
+document.getElementById('upgradeOffcanvas').addEventListener('hidden.bs.offcanvas', function() {
+    ocCardEl.unmount();
+    document.getElementById('oc-card-errors').textContent = '';
+});
+
+ocCardEl.on('change', e => {
+    document.getElementById('oc-card-errors').textContent = e.error ? e.error.message : '';
+});
+
+document.getElementById('oc-subscribe-btn').addEventListener('click', async function() {
+    const btn     = this;
+    const text    = document.getElementById('oc-btn-text');
+    const spinner = document.getElementById('oc-spinner');
+    btn.disabled  = true;
+    text.classList.add('d-none');
+    spinner.classList.remove('d-none');
+
+    try {
+        const { paymentMethod, error } = await stripe.createPaymentMethod({
+            type: 'card',
+            card: ocCardEl,
+            billing_details: { email: '<?= $userEmail ?>', name: '<?= $userName ?>' }
+        });
+        if (error) throw new Error(error.message);
+
+        const body = new URLSearchParams({
+            payment_method_id: paymentMethod.id,
+            selected_plan: ocSelectedPlan
+        });
+
+        const resp   = await fetch('api/admin/subscribe.php', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+        const result = await resp.json();
+
+        if (result.success) {
+            toastr.options = { positionClass: 'toast-top-center', timeOut: 3000, onHidden: () => window.location.reload() };
+            toastr.success('Subscription activated! Refreshing…');
+        } else {
+            throw new Error(result.error || 'Subscription failed.');
+        }
+    } catch (err) {
+        toastr.error(err.message || 'Payment failed. Please try again.');
+        btn.disabled = false;
+        text.classList.remove('d-none');
+        spinner.classList.add('d-none');
+    }
 });
 </script>
-
-<script src="https://www.paypal.com/sdk/js?client-id=AX9hxbxKbSio-0qMSjGUE_JDEOlsynaCjzrynrgEmhTB8SpSu0u_x7xv8DaGGow18Ntj324vFlLX7Mpe&vault=true&intent=subscription&disable-funding=paylater"></script>
-<script>
-const planIdByTier = {
-    
-  starter: 'P-8TY88622S6861012TNCCUTNA',
-  lite: 'P-6HM73249VT513120DNCCUUFI',
-  standard: 'P-56G98557MN118924LNCCUUTA',
-  pro: 'P-4EK43356UT0475350NCCUU7Q',
-};
-
-paypal.Buttons({
-  style: {
-    layout: 'horizontal',
-    color: 'black',
-    shape: 'pill',
-    label: 'subscribe',
-    height: 35,
-    tagline: false
-  },
-  createSubscription: function (data, actions) {
-    // Grab the selected tier from the form
-    const selectedTier = document.querySelector('input[name="tier"]:checked')?.value;
-    const planId = planIdByTier[selectedTier];
-     
-
-    if (!planId) {
-      alert('Please select a valid pricing tier.');
-      throw new Error('Missing plan ID');
-    }
-
-    return actions.subscription.create({
-      plan_id: planId,
-      custom: document.getElementById('user_uuid').value
-    });
-  },
-  onApprove: function (data, actions) {
-        
-        const selectedTier = document.querySelector('input[name="tier"]:checked')?.value;
-        const planId = planIdByTier[selectedTier];
-        
-        const payload = {
-            subscriptionID: data.subscriptionID,
-            user_uuid: document.getElementById('user_uuid').value,
-            tier: planId 
-            
-        }
-      fetch('handle_success.php', {
-          method: 'POST',
-          body: JSON.stringify(payload),
-          headers: {
-            'X-Requested-With': 'XMLHttpRequest' // this triggers the JSON response
-          }
-        })
-          .then(response => response.json())
-          .then(data => {
-              console.log(data);
-            if (data.status === 'ok') {
-                console.log('We got everything');
-              window.location.reload();
-            } else {
-                email = document.getElementById('mka_email').value
-                console.log('Something missing')
-                window.location.href = '/dashboards/500_signup.php?error=withresponse&email='+email;
-              
-            }
-          })
-          .catch(err => {
-              email = document.getElementById('mka_email').value
-              window.location.href = '/dashboards/500_signup.php?error=noresponse&email='+email;
-            
-          });  
-      
-    
-  }
-}).render('#paypal-button-container');
-</script>
-
-
-
 
 <?php if (!empty($_SESSION['flash_message'])): ?>
 <script>
@@ -421,7 +484,7 @@ document.addEventListener("DOMContentLoaded", function() {
     <script src="plugins/simplebar/js/simplebar.min.js"></script>
 
     <!-- Custom and Plugin Javascript -->
-    <script src="js/inspinia.js"></script>
+    <script src="js/inspinia.js?v=<?= ASSET_VER ?>"></script>
 
     <!-- Flot -->
     <script src="plugins/flot/js/jquery.flot.js"></script>

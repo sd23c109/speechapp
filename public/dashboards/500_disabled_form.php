@@ -42,7 +42,8 @@ if($status == 'error') {
     <link href="plugins/animate/css/animate.min.css" rel="stylesheet">
 
     <!-- Style css -->
-    <link href="css/style.min.css" rel="stylesheet" type="text/css">
+    <link href="css/style.min.css?v=<?= ASSET_VER ?>" rel="stylesheet" type="text/css">
+    <link href="css/mobile.css?v=<?= ASSET_VER ?>" rel="stylesheet" type="text/css">
 
     <!-- Head.js -->
     <script src="js/head.js"></script>
@@ -67,7 +68,7 @@ if($status == 'error') {
     <script src="plugins/simplebar/js/simplebar.min.js"></script>
 
     <!-- Custom and Plugin Javascript -->
-    <script src="js/inspinia.js"></script>
+    <script src="js/inspinia.js?v=<?= ASSET_VER ?>"></script>
 
 </body>
 
